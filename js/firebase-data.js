@@ -22,6 +22,7 @@ const FB_CACHE = {
   settings:   null,
   students:   [],
   formations: null,
+  classes:    null,
   activity:   [],
   loaded:     false,
 };
@@ -45,10 +46,11 @@ async function fbLoadAll() {
   if (!FB_MODE) return;
 
   try {
-    const [settSnap, studSnap, formSnap, actSnap] = await Promise.all([
+    const [settSnap, studSnap, formSnap, clsSnap, actSnap] = await Promise.all([
       fbDb.collection('config').doc('settings').get(),
       fbDb.collection('students').get(),
       fbDb.collection('config').doc('formations').get(),
+      fbDb.collection('config').doc('classes').get(),
       fbDb.collection('activity').orderBy('ts', 'desc').limit(200).get(),
     ]);
 
@@ -60,8 +62,28 @@ async function fbLoadAll() {
       FB_CACHE.formations = formSnap.data().list;
       localStorage.setItem(DB.KEYS.FORMATIONS, JSON.stringify(FB_CACHE.formations));
     }
-    FB_CACHE.students = studSnap.docs.map(d => d.data());
-    localStorage.setItem(DB.KEYS.STUDENTS, JSON.stringify(FB_CACHE.students));
+    if (clsSnap.exists) {
+      FB_CACHE.classes = clsSnap.data();
+      localStorage.setItem(DB.KEYS.CLASSES, JSON.stringify(FB_CACHE.classes));
+    }
+    const firestoreStudents = studSnap.docs.map(d => d.data());
+    if (firestoreStudents.length > 0) {
+      // Firestore has data → use it as the canonical source
+      FB_CACHE.students = firestoreStudents;
+      localStorage.setItem(DB.KEYS.STUDENTS, JSON.stringify(FB_CACHE.students));
+    } else {
+      // Firestore is empty → preserve localStorage students and sync them up
+      const localStudents = JSON.parse(localStorage.getItem(DB.KEYS.STUDENTS)) || [];
+      FB_CACHE.students = localStudents;
+      if (localStudents.length > 0) {
+        console.info('[Firebase] Firestore vide — synchronisation depuis localStorage…');
+        const batch = fbDb.batch();
+        localStudents.forEach(s => {
+          if (s.ine) batch.set(fbDb.collection('students').doc(s.ine), s);
+        });
+        batch.commit().catch(console.error);
+      }
+    }
 
     FB_CACHE.activity = actSnap.docs.map(d => d.data());
     localStorage.setItem(DB.KEYS.ACTIVITY, JSON.stringify(FB_CACHE.activity));
@@ -72,6 +94,7 @@ async function fbLoadAll() {
     // Fallback : lire depuis localStorage
     FB_CACHE.settings   = DB.getSettings();
     FB_CACHE.formations = DB.getFormations();
+    FB_CACHE.classes    = DB.getClasses();
     FB_CACHE.students   = JSON.parse(localStorage.getItem(DB.KEYS.STUDENTS)) || [];
     FB_CACHE.activity   = JSON.parse(localStorage.getItem(DB.KEYS.ACTIVITY))  || [];
     FB_CACHE.loaded     = true;
@@ -182,6 +205,18 @@ if (FB_MODE) {
     fbDb.collection('config').doc('formations').set({ list: f }).catch(console.error);
   };
 
+  // ── Classes ──────────────────────────────────────────────────────
+  DB.getClasses = function() {
+    if (FB_CACHE.classes) return FB_CACHE.classes;
+    return JSON.parse(localStorage.getItem(this.KEYS.CLASSES)) || {};
+  };
+
+  DB.saveClasses = function(c) {
+    FB_CACHE.classes = c;
+    localStorage.setItem(this.KEYS.CLASSES, JSON.stringify(c));
+    fbDb.collection('config').doc('classes').set(c).catch(console.error);
+  };
+
   // ── Élèves ───────────────────────────────────────────────────────
   DB.getStudents = function() {
     return FB_CACHE.loaded ? FB_CACHE.students : (JSON.parse(localStorage.getItem(this.KEYS.STUDENTS)) || []);
@@ -200,23 +235,30 @@ if (FB_MODE) {
   };
 
   DB.upsertStudent = function(student) {
-    const idx = FB_CACHE.students.findIndex(s => s.ine === student.ine);
-    if (idx >= 0) FB_CACHE.students[idx] = { ...FB_CACHE.students[idx], ...student };
-    else FB_CACHE.students.push(student);
-    localStorage.setItem(this.KEYS.STUDENTS, JSON.stringify(FB_CACHE.students));
-    fbDb.collection('students').doc(student.ine).set(
-      idx >= 0 ? FB_CACHE.students[idx] : student,
-      { merge: true }
-    ).catch(console.error);
+    // Utiliser la source canonique (cache ou localStorage selon l'état)
+    const arr = this.getStudents().slice(); // copie pour éviter les mutations
+    const idx = arr.findIndex(s => s.ine === student.ine);
+    if (idx >= 0) arr[idx] = { ...arr[idx], ...student };
+    else arr.push(student);
+    // Toujours synchroniser le cache et le localStorage
+    FB_CACHE.students = arr;
+    localStorage.setItem(this.KEYS.STUDENTS, JSON.stringify(arr));
+    const toWrite = idx >= 0 ? arr[idx] : student;
+    fbDb.collection('students').doc(student.ine).set(toWrite, { merge: true }).catch(console.error);
   };
 
   DB.updateStudentStatus = function(ine, patch) {
-    const idx = FB_CACHE.students.findIndex(s => s.ine === ine);
+    // Utiliser la source canonique (cache ou localStorage selon l'état)
+    const arr = this.getStudents().slice();
+    const idx = arr.findIndex(s => s.ine === ine);
     if (idx >= 0) {
-      FB_CACHE.students[idx] = { ...FB_CACHE.students[idx], ...patch };
-      localStorage.setItem(this.KEYS.STUDENTS, JSON.stringify(FB_CACHE.students));
-      fbDb.collection('students').doc(ine).set(patch, { merge: true }).catch(console.error);
-      return FB_CACHE.students[idx];
+      arr[idx] = { ...arr[idx], ...patch };
+      // Toujours synchroniser le cache et le localStorage
+      FB_CACHE.students = arr;
+      localStorage.setItem(this.KEYS.STUDENTS, JSON.stringify(arr));
+      // Écrire le document complet pour s'assurer que Firestore est à jour
+      fbDb.collection('students').doc(ine).set(arr[idx]).catch(console.error);
+      return arr[idx];
     }
     return null;
   };
