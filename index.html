@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AFFELNET Manager — LPO Léopold Elfort, Mana</title>
+  <meta name="description" content="Gestion des inscriptions AFFELNET Lycée — LPO Léopold Elfort, Mana, Guyane">
+  <link rel="stylesheet" href="css/style.css">
+  <!-- SheetJS pour lire les fichiers Excel -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════
+     ÉCRAN DE CONNEXION
+══════════════════════════════════════════════════ -->
+<div id="login-screen">
+  <div id="login-left">
+    <div class="login-logo">🏫</div>
+    <h1>LPO Léopold Elfort<br>Mana — Guyane</h1>
+    <p>Gestion des inscriptions AFFELNET Lycée</p>
+
+    <div style="margin-top:2.5rem;text-align:center">
+      <div style="opacity:.6;font-size:.8rem;margin-bottom:1rem;letter-spacing:.05em">ANNÉE SCOLAIRE</div>
+      <div style="font-size:1.8rem;font-weight:800;letter-spacing:.08em" id="login-annee">—</div>
+    </div>
+
+    <div style="margin-top:3rem;display:flex;flex-direction:column;gap:.7rem;width:100%;max-width:280px">
+      <div style="display:flex;align-items:center;gap:.6rem;font-size:.85rem;opacity:.75">
+        <span>🔵</span> Pré-Tour inscription
+      </div>
+      <div style="display:flex;align-items:center;gap:.6rem;font-size:.85rem;opacity:.75">
+        <span>🟣</span> 1er Tour inscription
+      </div>
+      <div style="display:flex;align-items:center;gap:.6rem;font-size:.85rem;opacity:.75">
+        <span>🔴</span> 2nd Tour inscription
+      </div>
+    </div>
+
+    <div class="login-badge" style="margin-top:auto">🌿 Territoire de la Guyane française</div>
+  </div>
+
+  <div id="login-right">
+    <div style="font-size:2.5rem;margin-bottom:1rem">🔐</div>
+    <h2>Connexion</h2>
+    <p>Entrez vos identifiants pour accéder à l'application</p>
+
+    <div class="login-error" id="login-error"></div>
+
+    <div class="login-form">
+      <div class="form-group">
+        <label for="login-input">Identifiant</label>
+        <input type="text" id="login-input" placeholder="Votre identifiant" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label for="pwd-input">Mot de passe</label>
+        <input type="password" id="pwd-input" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="btn-login" onclick="doLogin()">Se connecter →</button>
+    </div>
+
+    <div style="margin-top:2rem;text-align:center;font-size:.78rem;color:#BBB">
+      <div style="margin-bottom:.4rem">Comptes par défaut (à modifier dans Paramètres) :</div>
+      <div>proviseur / proviseur2025</div>
+      <div>secretaire / secr2025</div>
+      <div>aed / aed2025</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     APPLICATION PRINCIPALE
+══════════════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- ── Sidebar ───────────────────────────────────── -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo-icon">🏫</div>
+      <div class="sidebar-header-text">
+        <h2>AFFELNET Manager</h2>
+        <p>LPO Léopold Elfort</p>
+      </div>
+    </div>
+
+    <div class="sidebar-year" id="sb-year">—</div>
+
+    <nav>
+      <div id="nav-items"><!-- injecté par JS --></div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="user-avatar" id="sb-user-avatar">?</div>
+        <div class="user-info">
+          <h4 id="sb-user-name">—</h4>
+          <p id="sb-user-role">—</p>
+        </div>
+        <button class="btn-logout" onclick="doLogout()" title="Déconnexion">⎋</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Zone principale ───────────────────────────── -->
+  <main id="main-area">
+    <header id="top-header">
+      <div id="page-title">Tableau de bord</div>
+      <div id="header-period"></div>
+      <div class="header-date" id="header-date"></div>
+    </header>
+
+    <div id="page-content">
+      <!-- contenu injecté dynamiquement -->
+    </div>
+  </main>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     MODALE GLOBALE
+══════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-box">
+    <div id="modal-body-content"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     ZONE TOASTS
+══════════════════════════════════════════════════ -->
+<div id="toast-area"></div>
+
+<!-- ══════════════════════════════════════════════════
+     SCRIPTS
+══════════════════════════════════════════════════ -->
+<!-- Firebase SDK (compat v10) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<!-- Config Firebase (à remplir dans firebase-config.js) -->
+<script src="js/firebase-config.js"></script>
+<!-- Données locales puis couche Firebase -->
+<script src="js/data.js"></script>
+<script src="js/firebase-data.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
