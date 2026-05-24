@@ -570,8 +570,6 @@ function renderStudentDetail(el, ine) {
               <div class="info-item"><div class="info-label">Nom</div><div class="info-value">${esc(s.nom)}</div></div>
               <div class="info-item"><div class="info-label">Prénom</div><div class="info-value">${esc(s.prenom)}</div></div>
               <div class="info-item"><div class="info-label">INE</div><div class="info-value" style="font-family:monospace">${esc(s.ine)}</div></div>
-              <div class="info-item"><div class="info-label">Adresse</div><div class="info-value">${[s.adresse3, s.codePostal, s.ville].filter(Boolean).join(', ')||'—'}</div></div>
-              <div class="info-item"><div class="info-label">Téléphone responsable</div><div class="info-value">${esc(s.tel1||s.tel2||'—')}</div></div>
             </div>
           </div>
           <div>
@@ -1371,20 +1369,12 @@ function processAffelnetFile(file) {
           ine,
           nom:    String(row['Nom'] || '').trim().toUpperCase(),
           prenom: String(row['Prénom 1'] || row['Prenom 1'] || '').trim(),
-          adresse3:   String(row['Adresse 3'] || '').trim(),
-          codePostal: String(row['Code Postal'] || '').trim(),
-          ville:      String(row['Ville'] || '').trim(),
-          tel1:       String(row['Téléphone 1 (Responsable)'] || '').trim(),
-          tel2:       String(row['Téléphone 2 (Responsable)'] || '').trim(),
-          tel3:       String(row['Téléphone portable'] || '').trim(),
-          emailResp:  String(row['Courriel responsable 1'] || '').trim(),
           libelleFormation,
           classeAffectee,
-          lv1:        String(row['Libellé  LV1'] || row['Libellé LV1'] || '').trim(),
-          lv2:        String(row['Libellé  LV2'] || row['Libellé LV2'] || '').trim(),
-          mnemonique: String(row['Mnémonique'] || '').trim(),
+          lv1:  String(row['Libellé  LV1'] || row['Libellé LV1'] || '').trim(),
+          lv2:  String(row['Libellé  LV2'] || row['Libellé LV2'] || '').trim(),
           etablissementOrigine: String(row['Den. comp. étab. origine'] || '').trim(),
-          rang: row['Rang'] || '',
+          rang: String(row['Rang'] || '').trim(),
           statut: 'non_inscrit',
         };
 
