@@ -71,14 +71,23 @@ async function doLogin() {
     try {
       await fbLogin(login, pwd);
     } catch (err) {
-      btn.textContent = 'Se connecter →';
-      btn.disabled = false;
-      let msg = 'Erreur de connexion.';
-      if (err.code === 'auth/wrong-password') msg = 'Mot de passe incorrect (Firebase).';
-      else if (err.code === 'auth/too-many-requests') msg = 'Trop de tentatives. Réessayez plus tard.';
-      errEl.textContent = msg;
-      errEl.style.display = 'block';
-      return;
+      // Mot de passe Firebase incorrect → bloquer (l'utilisateur doit corriger)
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        btn.textContent = 'Se connecter →';
+        btn.disabled = false;
+        errEl.textContent = 'Mot de passe incorrect.';
+        errEl.style.display = 'block';
+        return;
+      }
+      if (err.code === 'auth/too-many-requests') {
+        btn.textContent = 'Se connecter →';
+        btn.disabled = false;
+        errEl.textContent = 'Trop de tentatives. Réessayez dans quelques minutes.';
+        errEl.style.display = 'block';
+        return;
+      }
+      // Domaine non autorisé, réseau absent, etc. → mode local avec avertissement
+      console.warn('[Firebase] Connexion impossible, mode local activé :', err.code || err.message);
     }
   }
 
