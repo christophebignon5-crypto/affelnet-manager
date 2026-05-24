@@ -2,3 +2,5 @@
 Thumbs.db
 *.log
 .claude/
+# Ne jamais publier la config Firebase avec les vraies clés
+js/firebase-config.js
