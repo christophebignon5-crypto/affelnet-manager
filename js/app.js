@@ -398,10 +398,20 @@ function renderStudents(el) {
           <option value="derogation_valide"  ${studentFilter.statut==='derogation_valide'?'selected':''}>Dérogation validée</option>
           <option value="derogation_refuse"  ${studentFilter.statut==='derogation_refuse'?'selected':''}>Dérogation refusée</option>
         </select>
-        <button class="btn btn-sm ${studentFilter.source==='affelnet' ? 'btn-primary' : 'btn-outline'}"
-          onclick="studentFilter.source=studentFilter.source==='affelnet'?'':'affelnet';studentFilter.redoublant=false;renderStudentTable()"
-          style="white-space:nowrap">
-          📥 AFFELNET${studentFilter.source==='affelnet' ? ' ✕' : ''}
+        <button class="btn btn-sm ${studentFilter.source==='preTour' ? 'btn-primary' : 'btn-outline'}"
+          onclick="studentFilter.source=studentFilter.source==='preTour'?'':'preTour';studentFilter.redoublant=false;renderStudentTable()"
+          style="white-space:nowrap;background:${studentFilter.source==='preTour'?'#1565C0':''}">
+          🔵 Pré-Tour${studentFilter.source==='preTour' ? ' ✕' : ''}
+        </button>
+        <button class="btn btn-sm ${studentFilter.source==='premierTour' ? 'btn-primary' : 'btn-outline'}"
+          onclick="studentFilter.source=studentFilter.source==='premierTour'?'':'premierTour';studentFilter.redoublant=false;renderStudentTable()"
+          style="white-space:nowrap;background:${studentFilter.source==='premierTour'?'#6A1B9A':''}">
+          🟣 Tour 1${studentFilter.source==='premierTour' ? ' ✕' : ''}
+        </button>
+        <button class="btn btn-sm ${studentFilter.source==='secondTour' ? 'btn-primary' : 'btn-outline'}"
+          onclick="studentFilter.source=studentFilter.source==='secondTour'?'':'secondTour';studentFilter.redoublant=false;renderStudentTable()"
+          style="white-space:nowrap;background:${studentFilter.source==='secondTour'?'#B71C1C':''}">
+          🔴 Tour 2${studentFilter.source==='secondTour' ? ' ✕' : ''}
         </button>
         <button class="btn btn-sm ${studentFilter.source==='orientation' ? 'btn-primary' : 'btn-outline'}"
           onclick="studentFilter.source=studentFilter.source==='orientation'?'':'orientation';studentFilter.redoublant=false;renderStudentTable()"
@@ -438,7 +448,12 @@ function renderStudentTable() {
     const matchC = !studentFilter.classe || s.classeAffectee === studentFilter.classe;
     const matchT = !studentFilter.statut || s.statut === studentFilter.statut;
     const matchR = !studentFilter.redoublant || (s.redoublant && !s.classeAffectee);
-    const matchSrc = !studentFilter.source || s.source === studentFilter.source;
+    const matchSrc = !studentFilter.source || (() => {
+      if (studentFilter.source === 'orientation') return s.source === 'orientation';
+      // Filtre par période AFFELNET
+      const ps = s.periodesSource || (s.periodeSource ? [s.periodeSource] : []);
+      return ps.includes(studentFilter.source);
+    })();
     return matchS && matchC && matchT && matchR && matchSrc;
   }).sort((a,b) => {
     // Redoublants sans classe en premier
@@ -461,8 +476,8 @@ function renderStudentTable() {
     <tr style="${isRedoSansClasse ? 'background:#FFF3E0' : ''}">
       <td class="col-nom">
         ${esc(s.nom)}
-        ${s.source === 'affelnet'     ? `<span style="display:inline-block;margin-left:.4rem;font-size:.7rem;background:#1565C0;color:#fff;padding:.1rem .4rem;border-radius:50px;vertical-align:middle">📥 AFFELNET</span>` : ''}
-        ${s.source === 'orientation'  ? `<span style="display:inline-block;margin-left:.4rem;font-size:.7rem;background:#2D6A4F;color:#fff;padding:.1rem .4rem;border-radius:50px;vertical-align:middle">🎓 Orientation</span>` : ''}
+        ${s.source === 'affelnet'    ? periodeBadgeInline(s.periodeSource) : ''}
+        ${s.source === 'orientation' ? `<span style="display:inline-block;margin-left:.4rem;font-size:.7rem;background:#2D6A4F;color:#fff;padding:.1rem .4rem;border-radius:50px;vertical-align:middle">🎓 Orientation</span>` : ''}
         ${s.redoublant ? `<span style="display:inline-block;margin-left:.4rem;font-size:.7rem;background:#E65100;color:#fff;padding:.1rem .4rem;border-radius:50px;vertical-align:middle">🔄 Redoublant</span>` : ''}
       </td>
       <td>${esc(s.prenom)}</td>
@@ -481,7 +496,7 @@ function renderStudentTable() {
           ${isRedoSansClasse && currentUser.role === 'proviseur'
             ? `<button class="btn btn-sm" style="background:#E65100;color:#fff" onclick="openEditStudentModal('${s.ine}')">Affecter classe</button>`
             : canEnrollStudent(s) ? `<button class="btn btn-primary btn-sm" onclick="openEnrollModal('${s.ine}')">Inscrire</button>` : ''}
-          ${s.statut === 'non_inscrit' && currentUser.role === 'aed' && s.source !== 'orientation' ? `<button class="btn btn-sm" style="background:#FFF3E0;color:#E65100" onclick="openDeroModal('${s.ine}')">Dérogation</button>` : ''}
+          ${s.statut === 'non_inscrit' && currentUser.role === 'aed' && s.source !== 'orientation' && !canEnrollStudent(s) ? `<button class="btn btn-sm" style="background:#FFF3E0;color:#E65100" onclick="openDeroModal('${s.ine}')">Dérogation</button>` : ''}
         </div>
       </td>
     </tr>`;
@@ -511,6 +526,7 @@ function renderStudentDetail(el, ine) {
           </div>
           <div style="margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
             ${s.source === 'orientation' ? `<span class="badge" style="background:#E8F5E9;color:#2D6A4F;border:1px solid #A8D5B5">🎓 Élève orientation</span>` : ''}
+            ${s.source === 'affelnet' ? periodeBadgeInline(s.periodeSource) : ''}
             ${statusBadge(s.statut)} ${periodeBadge(s.periode)}
           </div>
         </div>
@@ -528,6 +544,18 @@ function renderStudentDetail(el, ine) {
             <div class="info-grid" style="border:1px solid #E0EDE5;border-top:none;border-radius:0 0 8px 8px;padding:1rem">
               <div class="info-item"><div class="info-label">Formation</div><div class="info-value">${esc(s.libelleFormation||'—')}</div></div>
               <div class="info-item"><div class="info-label">Classe affectée</div><div class="info-value"><strong>${esc(s.classeAffectee||'—')}</strong></div></div>
+              ${s.source === 'affelnet' ? `
+              <div class="info-item" style="grid-column:1/-1"><div class="info-label">Période(s) d'inscription</div><div class="info-value">${
+                (() => {
+                  const ps = s.periodesSource || (s.periodeSource ? [s.periodeSource] : []);
+                  const bgMap = { preTour:'#BBDEFB:#1565C0:🔵 Pré-Tour', premierTour:'#E1BEE7:#6A1B9A:🟣 Tour 1', secondTour:'#FFCDD2:#B71C1C:🔴 Tour 2' };
+                  if (!ps.length) return '<span style="color:#999">—</span>';
+                  return ps.map(p => {
+                    const [bg,col,lbl] = (bgMap[p]||'#EEE:#555:'+p).split(':');
+                    return `<span style="display:inline-block;background:${bg};color:${col};border:1px solid ${col};padding:.15rem .6rem;border-radius:50px;font-size:.8rem;font-weight:600;margin:.1rem">${lbl}</span>`;
+                  }).join(' ');
+                })()
+              }</div></div>` : ''}
               <div class="info-item"><div class="info-label">LV1</div><div class="info-value">${esc(s.lv1||'—')}</div></div>
               <div class="info-item"><div class="info-label">LV2</div><div class="info-value">${esc(s.lv2||'—')}</div></div>
               <div class="info-item"><div class="info-label">Étab. d'origine</div><div class="info-value">${esc(s.etablissementOrigine||'—')}</div></div>
@@ -877,7 +905,32 @@ function renderImport(el) {
             <p style="font-size:.83rem;color:#666;margin-bottom:.8rem">
               Fichier officiel des élèves affectés : <code>affectesEtablissementAccueil_XXXXX.xlsx</code>
             </p>
-            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()"
+
+            <!-- Sélecteur de période — obligatoire avant import -->
+            <div style="background:#FFF8E1;border:2px solid #FFE082;border-radius:10px;padding:1rem 1.2rem;margin-bottom:1rem">
+              <div style="font-weight:700;color:#E65100;margin-bottom:.7rem;font-size:.9rem">
+                📅 Période de rattachement <span style="color:#B71C1C">*</span> <span style="font-weight:400;font-size:.8rem">(obligatoire avant d'importer)</span>
+              </div>
+              <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+                <label id="label-preTour" style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.5rem 1rem;border-radius:8px;border:2px solid #BDBDBD;background:#fff;font-weight:600;font-size:.88rem;transition:all .15s">
+                  <input type="radio" name="affelnet-periode" value="preTour" onchange="updateAffelnetDropZone()" style="accent-color:#1565C0">
+                  🔵 Pré-Tour
+                </label>
+                <label id="label-premierTour" style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.5rem 1rem;border-radius:8px;border:2px solid #BDBDBD;background:#fff;font-weight:600;font-size:.88rem;transition:all .15s">
+                  <input type="radio" name="affelnet-periode" value="premierTour" onchange="updateAffelnetDropZone()" style="accent-color:#6A1B9A">
+                  🟣 1er Tour
+                </label>
+                <label id="label-secondTour" style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.5rem 1rem;border-radius:8px;border:2px solid #BDBDBD;background:#fff;font-weight:600;font-size:.88rem;transition:all .15s">
+                  <input type="radio" name="affelnet-periode" value="secondTour" onchange="updateAffelnetDropZone()" style="accent-color:#B71C1C">
+                  🔴 2nd Tour
+                </label>
+              </div>
+            </div>
+
+            <div id="dz-periode-hint" style="font-size:.82rem;color:#E65100;margin-bottom:.5rem;display:flex;align-items:center;gap:.4rem">
+              ⬆️ Sélectionnez une période ci-dessus pour activer l'import.
+            </div>
+            <div class="drop-zone" id="drop-zone" style="opacity:.45;pointer-events:none"
               ondragover="event.preventDefault();this.classList.add('dragging')"
               ondragleave="this.classList.remove('dragging')"
               ondrop="handleDrop(event)">
@@ -1325,15 +1378,45 @@ function closeModal() { document.getElementById('modal-overlay').classList.remov
 function openEnrollModal(ine) {
   const s = DB.getStudent(ine);
   if (!s) { showToast('Élève introuvable — veuillez recharger la page.', 'error'); return; }
-  const isOrientation   = s.source === 'orientation';
-  const isDeroValide    = s.statut === 'derogation_valide';
-  // Seul cas bloqué : AED + élève AFFELNET + hors période + pas de dérogation validée
-  if (!isOrientation && !isDeroValide && !DB.canEnrollNow(currentUser.role)) {
-    showToast('Inscription impossible : hors période. Demandez une dérogation.', 'error');
-    return;
+  const isOrientation = s.source === 'orientation';
+  const isDeroValide  = s.statut === 'derogation_valide';
+  const isAdmin       = currentUser.role === 'proviseur' || currentUser.role === 'secretaire';
+  const periode       = DB.getPeriodeActive();
+
+  // Blocage AED uniquement pour les élèves AFFELNET
+  if (!isOrientation && !isDeroValide && !isAdmin) {
+    if (!periode) {
+      showToast('Inscription impossible : aucune période active. Demandez une dérogation.', 'error');
+      return;
+    }
+    const periodesSource = s.periodesSource || (s.periodeSource ? [s.periodeSource] : []);
+    if (periodesSource.length > 0 && !periodesSource.includes(periode)) {
+      const labels = { preTour:'Pré-Tour', premierTour:'1er Tour', secondTour:'2nd Tour' };
+      const periodesFr = periodesSource.map(p => labels[p] || p).join(', ');
+      showToast(`Élève rattaché au ${periodesFr} — pas à la période en cours. Demandez une dérogation.`, 'error');
+      return;
+    }
   }
-  const periode = DB.getPeriodeActive();
-  const isHors  = !isOrientation && !isDeroValide && !periode && (currentUser.role === 'proviseur' || currentUser.role === 'secretaire');
+
+  const isHors = !isOrientation && !isDeroValide && !periode && isAdmin;
+
+  // Texte informatif selon le contexte
+  let infoBlock;
+  if (isOrientation) {
+    infoBlock = `<div style="background:#E8F5E9;border-radius:8px;padding:.7rem;font-size:.85rem;color:var(--green-800)">🎓 Élève orientation — inscription libre (hors période).</div>`;
+  } else if (isDeroValide) {
+    infoBlock = `<div style="background:#E8F5E9;border-radius:8px;padding:.7rem;font-size:.85rem;color:var(--green-800)">✔️ Dérogation validée — inscription autorisée.</div>`;
+  } else if (isHors) {
+    const ps = s.periodesSource || (s.periodeSource ? [s.periodeSource] : []);
+    const labels = { preTour:'🔵 Pré-Tour', premierTour:'🟣 1er Tour', secondTour:'🔴 2nd Tour' };
+    const periodeInfo = ps.length > 0 ? `<div style="font-size:.8rem;margin-top:.3rem">Rattaché : ${ps.map(p=>labels[p]||p).join(', ')}</div>` : '';
+    infoBlock = `<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:.8rem;font-size:.85rem;color:#E65100">⚠️ Inscription hors période — sera marquée comme exception autorisée.${periodeInfo}</div>`;
+  } else {
+    const ps = s.periodesSource || (s.periodeSource ? [s.periodeSource] : []);
+    const labels = { preTour:'🔵 Pré-Tour', premierTour:'🟣 1er Tour', secondTour:'🔴 2nd Tour' };
+    infoBlock = `<div style="background:#E8F5E9;border-radius:8px;padding:.7rem;font-size:.85rem;color:var(--green-800)">📅 Période : <strong>${periodeFr(periode)}</strong>${ps.length > 0 ? ` — Rattaché : ${ps.map(p=>labels[p]||p).join(', ')}` : ''}</div>`;
+  }
+
   openModal(`
     <div class="modal-header"><h3>✅ Inscrire l'élève</h3><button class="btn-close-modal" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
@@ -1342,13 +1425,7 @@ function openEnrollModal(ine) {
         <div style="font-size:.85rem;color:#666">${esc(s.classeAffectee||'—')} ${esc(s.libelleFormation||'')}</div>
         <div style="font-size:.78rem;color:#999;margin-top:.2rem">INE : ${esc(s.ine)}</div>
       </div>
-      ${isOrientation
-        ? `<div style="background:#E8F5E9;border-radius:8px;padding:.7rem;font-size:.85rem;color:var(--green-800)">🎓 Élève orientation — inscription libre (hors période).</div>`
-        : isDeroValide
-          ? `<div style="background:#E8F5E9;border-radius:8px;padding:.7rem;font-size:.85rem;color:var(--green-800)">✔️ Dérogation validée — inscription autorisée.</div>`
-          : isHors
-            ? `<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:.8rem;font-size:.85rem;color:#E65100">⚠️ Inscription hors période — sera marquée comme exception autorisée.</div>`
-            : `<div style="background:#E8F5E9;border-radius:8px;padding:.7rem;font-size:.85rem;color:var(--green-800)">📅 Période : <strong>${periodeFr(periode)}</strong></div>`}
+      ${infoBlock}
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal()">Annuler</button>
@@ -1598,18 +1675,69 @@ function savePeriodes() {
 /* ═══════════════════════════════════════════════════
    IMPORT FICHIERS
 ═══════════════════════════════════════════════════ */
-function handleDrop(e) { e.preventDefault(); document.getElementById('drop-zone').classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) processAffelnetFile(f); }
-function handleFileSelect(e) { const f = e.target.files[0]; if (f) processAffelnetFile(f); e.target.value = ''; }
+function getSelectedAffelnetPeriode() {
+  const el = document.querySelector('input[name="affelnet-periode"]:checked');
+  return el ? el.value : null;
+}
+
+function updateAffelnetDropZone() {
+  const periode = getSelectedAffelnetPeriode();
+  const dz   = document.getElementById('drop-zone');
+  const hint = document.getElementById('dz-periode-hint');
+  const colors = { preTour: '#1565C0', premierTour: '#6A1B9A', secondTour: '#B71C1C' };
+  const labels = { preTour: ['label-preTour','#BBDEFB','#1565C0'], premierTour: ['label-premierTour','#E1BEE7','#6A1B9A'], secondTour: ['label-secondTour','#FFCDD2','#B71C1C'] };
+
+  // Reset all labels
+  ['preTour','premierTour','secondTour'].forEach(p => {
+    const [id, bg, border] = labels[p];
+    const el = document.getElementById(id);
+    if (el) el.style.cssText = el.style.cssText.replace(/border:[^;]+;/g,'').replace(/background:[^;]+;/g,'') + (p === periode ? `border:2px solid ${border};background:${bg};` : 'border:2px solid #BDBDBD;background:#fff;');
+  });
+
+  if (dz) {
+    if (periode) {
+      dz.style.opacity = '1';
+      dz.style.pointerEvents = 'auto';
+      dz.style.borderColor = colors[periode];
+      dz.onclick = () => document.getElementById('file-input').click();
+      if (hint) hint.style.display = 'none';
+    } else {
+      dz.style.opacity = '.45';
+      dz.style.pointerEvents = 'none';
+      dz.style.borderColor = '';
+      dz.onclick = null;
+      if (hint) hint.style.display = 'flex';
+    }
+  }
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('dragging');
+  const periode = getSelectedAffelnetPeriode();
+  if (!periode) { showToast('Sélectionnez une période avant d\'importer.', 'error'); return; }
+  const f = e.dataTransfer.files[0];
+  if (f) processAffelnetFile(f, periode);
+}
+function handleFileSelect(e) {
+  const periode = getSelectedAffelnetPeriode();
+  if (!periode) { showToast('Sélectionnez une période avant d\'importer.', 'error'); e.target.value = ''; return; }
+  const f = e.target.files[0];
+  if (f) processAffelnetFile(f, periode);
+  e.target.value = '';
+}
 function handleDropOrientation(e) { e.preventDefault(); document.getElementById('drop-zone-orientation').classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) processOrientationFile(f); }
 function handleOrientationSelect(e) { const f = e.target.files[0]; if (f) processOrientationFile(f); e.target.value = ''; }
 function handleDropFormations(e) { e.preventDefault(); document.getElementById('drop-zone-formations').classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f) processFormationsFile(f); }
 function handleFormationsSelect(e) { const f = e.target.files[0]; if (f) processFormationsFile(f); e.target.value = ''; }
 
-function processAffelnetFile(file) {
+function processAffelnetFile(file, periode) {
+  if (!periode) { showToast('Période de rattachement manquante.', 'error'); return; }
   const prog = document.getElementById('import-progress');
   const log  = document.getElementById('import-log');
   prog.style.display = 'block';
-  log.innerHTML = `<span class="log-info">📂 Lecture : ${esc(file.name)}…</span><br>`;
+  const periodeLabel = { preTour:'Pré-Tour', premierTour:'1er Tour', secondTour:'2nd Tour' }[periode] || periode;
+  log.innerHTML = `<span class="log-info">📂 Lecture : ${esc(file.name)} — période : ${periodeLabel}…</span><br>`;
 
   const reader = new FileReader();
   reader.onload = e => {
@@ -1628,6 +1756,12 @@ function processAffelnetFile(file) {
         if (!ine) { skipped++; return; }
         const libelleFormation = String(row['Libellé formation'] || '').trim();
         const classeAffectee   = resolveClasse(libelleFormation, formations) || '';
+        const ex = existing.find(s => s.ine === ine);
+
+        // Cumul des périodes : on garde les précédentes et on ajoute celle-ci si nouvelle
+        const exPeriodes = ex ? (ex.periodesSource || (ex.periodeSource ? [ex.periodeSource] : [])) : [];
+        const periodesSource = exPeriodes.includes(periode) ? exPeriodes : [...exPeriodes, periode];
+
         const student = {
           ine,
           nom:    String(row['Nom'] || '').trim().toUpperCase(),
@@ -1639,19 +1773,20 @@ function processAffelnetFile(file) {
           rang: String(row['Rang'] || '').trim(),
           statut: 'non_inscrit',
           source: 'affelnet',
+          periodeSource: periode,      // Période du dernier import
+          periodesSource,              // Toutes les périodes où l'élève apparaît
         };
-        const ex = existing.find(s => s.ine === ine);
         if (ex) {
           DB.upsertStudent({ ...student, statut:ex.statut, dateInscription:ex.dateInscription, inscritPar:ex.inscritPar, periode:ex.periode, deroDate:ex.deroDate, deroDemandeePar:ex.deroDemandeePar, deroValidePar:ex.deroValidePar, deroRefusMotif:ex.deroRefusMotif });
           updated++;
         } else { DB.upsertStudent(student); added++; }
       });
 
-      log.innerHTML += `<span class="log-ok">✅ ${added} élèves ajoutés</span><br>`;
-      if (updated) log.innerHTML += `<span class="log-info">🔄 ${updated} élèves mis à jour</span><br>`;
+      log.innerHTML += `<span class="log-ok">✅ ${added} élèves ajoutés (${periodeLabel})</span><br>`;
+      if (updated) log.innerHTML += `<span class="log-info">🔄 ${updated} élèves mis à jour (période ajoutée si nouvelle)</span><br>`;
       if (skipped) log.innerHTML += `<span class="log-warn">⚠️ ${skipped} lignes ignorées (pas d'INE)</span><br>`;
       log.innerHTML += `<span class="log-ok">✅ Import terminé — Total : ${DB.getStudents().length} élèves</span>`;
-      DB.addActivity({ type:'import', label:`Import AFFELNET : ${rows.length} élèves`, detail:`${added} ajoutés, ${updated} mis à jour — ${file.name}` });
+      DB.addActivity({ type:'import', label:`Import AFFELNET ${periodeLabel} : ${rows.length} élèves`, detail:`${added} ajoutés, ${updated} mis à jour — ${file.name}` });
       document.getElementById('import-actions').innerHTML = `
         <button class="btn btn-primary" onclick="navigateTo('students')">👥 Voir les élèves</button>
         <button class="btn btn-secondary" onclick="navigateTo('dashboard')">📊 Tableau de bord</button>`;
@@ -1847,9 +1982,17 @@ function canEnrollStudent(s) {
   if (s.statut === 'inscrit' || s.statut === 'hors_periode') return false;
   if (s.statut === 'derogation_attente') return false;
   if (s.statut === 'derogation_valide') return true;
-  // Élèves issus du fichier orientation : inscription libre, hors période
+  // Élèves orientation : inscription libre pour tous les rôles
   if (s.source === 'orientation') return true;
-  return DB.canEnrollNow(currentUser.role);
+  // Proviseur et Secrétaire : toujours autorisés (peuvent inscrire hors période)
+  if (currentUser.role === 'proviseur' || currentUser.role === 'secretaire') return true;
+  // AED : la période active doit exister ET l'élève doit y être rattaché
+  const activePeriode = DB.getPeriodeActive();
+  if (!activePeriode) return false;
+  const periodesSource = s.periodesSource || (s.periodeSource ? [s.periodeSource] : []);
+  // Rétrocompatibilité : élève importé avant la gestion des périodes → autorisé si période active
+  if (periodesSource.length === 0) return true;
+  return periodesSource.includes(activePeriode);
 }
 
 function statusBadge(statut) {
@@ -1871,6 +2014,17 @@ function periodeBadge(periode) {
   const [cls, icon, label] = map[periode] || [];
   if (!cls) return '';
   return `<span class="badge ${cls}">${icon} ${label}</span>`;
+}
+
+// Badge inline période AFFELNET (dans colonne Nom de la liste élèves)
+function periodeBadgeInline(periodeSource) {
+  const map = {
+    preTour:     ['#1565C0', '🔵 Pré-Tour'],
+    premierTour: ['#6A1B9A', '🟣 Tour 1'],
+    secondTour:  ['#B71C1C', '🔴 Tour 2'],
+  };
+  const [bg, label] = map[periodeSource] || ['#455A64', '📥 AFFELNET'];
+  return `<span style="display:inline-block;margin-left:.4rem;font-size:.7rem;background:${bg};color:#fff;padding:.1rem .4rem;border-radius:50px;vertical-align:middle">${label}</span>`;
 }
 
 function roleFr(role) { return { proviseur:'Proviseur', secretaire:'Secrétaire', aed:'AED Accueil' }[role] || role; }
