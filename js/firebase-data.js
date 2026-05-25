@@ -111,11 +111,21 @@ async function fbLoadAll() {
 /* ═════════════════════════════════════════════════════════════════
    LISTENER TEMPS RÉEL — Synchronise les élèves entre utilisateurs
 ═════════════════════════════════════════════════════════════════ */
+let fbListenerRetryCount = 0;
+const FB_LISTENER_MAX_RETRY = 5;
+
 function fbListenStudents() {
-  if (!FB_MODE || fbUnsubscribe) return;
+  if (!FB_MODE) return;
+  // Détacher le listener précédent si existant (reconnexion propre)
+  if (fbUnsubscribe) { fbUnsubscribe(); fbUnsubscribe = null; }
 
   fbUnsubscribe = fbDb.collection('students').onSnapshot(snapshot => {
+    // Réinitialiser le compteur de tentatives en cas de succès
+    fbListenerRetryCount = 0;
+
+    let hasChanges = false;
     snapshot.docChanges().forEach(change => {
+      hasChanges = true;
       const student = change.doc.data();
       if (change.type === 'added' || change.type === 'modified') {
         const idx = FB_CACHE.students.findIndex(s => s.ine === student.ine);
@@ -125,31 +135,99 @@ function fbListenStudents() {
         FB_CACHE.students = FB_CACHE.students.filter(s => s.ine !== student.ine);
       }
     });
+
+    if (!hasChanges) return; // Pas de modification réelle, éviter un rendu inutile
+
     localStorage.setItem(DB.KEYS.STUDENTS, JSON.stringify(FB_CACHE.students));
 
-    // Rafraîchir les vues sensibles si l'app est ouverte
+    // Mettre à jour l'indicateur de synchronisation dans l'en-tête
+    fbUpdateSyncIndicator();
+
+    // Rafraîchir la vue active sans réinitialiser les filtres ni l'interface
     if (typeof currentView !== 'undefined') {
-      if (currentView === 'dashboard') {
-        const el = document.getElementById('page-content');
-        if (el) renderDashboard(el);
-      } else if (currentView === 'students') {
-        const el = document.getElementById('page-content');
-        if (el) renderStudents(el);
-      } else if (currentView === 'derogations') {
-        const el = document.getElementById('page-content');
-        if (el) renderDerogations(el);
+      const el = document.getElementById('page-content');
+      if (el) {
+        if (currentView === 'dashboard') {
+          renderDashboard(el);
+        } else if (currentView === 'students') {
+          // renderStudentTable() au lieu de renderStudents() → préserve les filtres et la recherche
+          if (typeof renderStudentTable === 'function') renderStudentTable();
+        } else if (currentView === 'derogations') {
+          renderDerogations(el);
+        } else if (currentView === 'listes') {
+          renderClassLists(el);
+        }
       }
-      // Rafraîchir les badges de la sidebar
       if (typeof renderSidebar === 'function') renderSidebar();
     }
   }, err => {
     console.error('[Firebase] Erreur listener élèves:', err);
+    fbUnsubscribe = null;
+    // Reconnexion automatique avec délai exponentiel (max 5 tentatives)
+    if (fbListenerRetryCount < FB_LISTENER_MAX_RETRY) {
+      fbListenerRetryCount++;
+      const delay = Math.min(2000 * Math.pow(2, fbListenerRetryCount), 30000);
+      console.warn(`[Firebase] Reconnexion listener dans ${delay / 1000}s (tentative ${fbListenerRetryCount}/${FB_LISTENER_MAX_RETRY})`);
+      setTimeout(() => {
+        if (typeof fbAuth !== 'undefined' && fbAuth.currentUser) fbListenStudents();
+      }, delay);
+    } else {
+      console.error('[Firebase] Listener définitivement arrêté après plusieurs échecs.');
+      fbUpdateSyncIndicator(true);
+    }
   });
+}
+
+// Met à jour l'indicateur de sync dans l'en-tête
+function fbUpdateSyncIndicator(error = false) {
+  const el = document.getElementById('sync-indicator');
+  if (!el) return;
+  const now = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  if (error) {
+    el.innerHTML = `<span style="color:#B71C1C;font-size:.72rem" title="Synchronisation interrompue">⚠️ Sync perdue</span>`;
+  } else {
+    el.innerHTML = `<span style="color:#2D6A4F;font-size:.72rem" title="Données synchronisées">🟢 Sync ${now}</span>`;
+  }
 }
 
 /* ═════════════════════════════════════════════════════════════════
    AUTHENTIFICATION FIREBASE
 ═════════════════════════════════════════════════════════════════ */
+
+// Rafraîchissement manuel déclenché par le bouton 🔄
+async function fbRefreshNow() {
+  if (!FB_MODE) return;
+  const btn = document.getElementById('btn-refresh');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  try {
+    await fbLoadAll();
+    fbListenerRetryCount = 0;
+    fbListenStudents(); // Reconnecte le listener si nécessaire
+    fbUpdateSyncIndicator();
+    // Rafraîchir la vue active
+    const el = document.getElementById('page-content');
+    if (el && typeof currentView !== 'undefined') {
+      if (currentView === 'dashboard')   renderDashboard(el);
+      else if (currentView === 'students')  { if (typeof renderStudentTable === 'function') renderStudentTable(); }
+      else if (currentView === 'derogations') renderDerogations(el);
+      else if (currentView === 'listes')  renderClassLists(el);
+    }
+    if (typeof renderSidebar === 'function') renderSidebar();
+    if (typeof showToast === 'function') showToast('Données synchronisées avec Firebase.', 'success');
+  } catch(err) {
+    console.error('[Firebase] Erreur rafraîchissement manuel:', err);
+    fbUpdateSyncIndicator(true);
+  } finally {
+    if (btn) { btn.textContent = '🔄'; btn.disabled = false; }
+  }
+}
+
+// Affiche le bouton refresh et l'indicateur de sync (appelé après login Firebase réussi)
+function fbShowSyncUI() {
+  const btn = document.getElementById('btn-refresh');
+  if (btn) btn.style.display = '';
+  fbUpdateSyncIndicator();
+}
 
 // Convertit le login local en email Firebase fictif
 function loginToEmail(login) {
@@ -174,6 +252,7 @@ async function fbLogin(login, password) {
   // Charger les données depuis Firestore
   await fbLoadAll();
   fbListenStudents();
+  fbShowSyncUI();
 }
 
 async function fbLogout() {

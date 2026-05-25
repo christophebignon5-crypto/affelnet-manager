@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (session) {
     currentUser = session;
     if (typeof FB_MODE !== 'undefined' && FB_MODE) {
-      fbLoadAll().then(() => fbListenStudents()).catch(console.error);
+      fbLoadAll().then(() => { fbListenStudents(); fbShowSyncUI(); }).catch(console.error);
     }
     showApp();
   } else {

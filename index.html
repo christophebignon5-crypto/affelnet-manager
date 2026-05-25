@@ -107,6 +107,13 @@
       <div id="page-title">Tableau de bord</div>
       <div id="header-period"></div>
       <div class="header-date" id="header-date"></div>
+      <div style="display:flex;align-items:center;gap:.6rem;margin-left:auto">
+        <span id="sync-indicator"></span>
+        <button id="btn-refresh" title="Rafraîchir les données" onclick="fbRefreshNow()"
+          style="background:none;border:1px solid #D0E8D8;border-radius:6px;padding:.2rem .55rem;cursor:pointer;font-size:.82rem;color:#2D6A4F;display:none">
+          🔄
+        </button>
+      </div>
     </header>
 
     <div id="page-content">
