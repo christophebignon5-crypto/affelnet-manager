@@ -234,6 +234,43 @@ function loginToEmail(login) {
   return `${login.toLowerCase()}@affelnet-lpo.app`;
 }
 
+// Charge les settings Firestore via auth anonyme (fallback si Firebase Auth est désynchronisé)
+async function fbLoadAllAnonymous() {
+  if (!FB_MODE) return;
+  if (!fbAuth.currentUser) {
+    await fbAuth.signInAnonymously();
+  }
+  const settSnap = await fbDb.collection('config').doc('settings').get();
+  if (settSnap.exists) {
+    FB_CACHE.settings = settSnap.data();
+    localStorage.setItem(DB.KEYS.SETTINGS, JSON.stringify(FB_CACHE.settings));
+  }
+}
+
+// Resynchronise le mot de passe Firebase Auth avec le mot de passe applicatif
+async function fbSyncAuthPassword(login, password) {
+  if (!FB_MODE) return;
+  const email = loginToEmail(login);
+  try {
+    // Tenter de se connecter avec l'ancien compte anonyme puis de créer/réauthentifier
+    await fbAuth.signInWithEmailAndPassword(email, password);
+  } catch (err) {
+    if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+      // Créer ou recréer le compte Firebase Auth avec le bon mot de passe
+      try {
+        await fbAuth.createUserWithEmailAndPassword(email, password);
+        console.info('[Firebase] Compte Firebase Auth créé/réinitialisé pour', login);
+      } catch (createErr) {
+        // Si le compte existe mais avec un mauvais mdp, on ne peut pas le réinitialiser sans le précédent
+        // → l'administrateur devra le supprimer manuellement dans la console Firebase si nécessaire
+        console.warn('[Firebase] Impossible de synchroniser Firebase Auth :', createErr.message);
+      }
+    }
+  }
+  // Recharger toutes les données avec la bonne session
+  try { await fbLoadAll(); fbListenStudents(); fbShowSyncUI(); } catch (_) {}
+}
+
 async function fbLogin(login, password) {
   if (!FB_MODE) return null;
 

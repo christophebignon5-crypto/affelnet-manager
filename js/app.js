@@ -40,24 +40,51 @@ async function doLogin() {
   const pwd   = document.getElementById('pwd-input').value;
   const errEl = document.getElementById('login-error');
   const btn   = document.querySelector('.btn-login');
-  const user  = DB.authenticate(login, pwd);
+  errEl.style.display = 'none';
+  btn.textContent = 'Connexion…'; btn.disabled = true;
+
+  if (typeof FB_MODE !== 'undefined' && FB_MODE) {
+    // ── Mode Firebase : charger Firestore EN PREMIER ────────────────
+    // Les paramètres (mots de passe, périodes) sont la source de vérité dans Firestore.
+    // On les récupère avant de vérifier le mot de passe pour s'affranchir du localStorage local.
+    try {
+      await fbLogin(login, pwd);
+      // fbLogin a chargé les settings depuis Firestore → DB.authenticate lit maintenant les bons mots de passe
+    } catch (err) {
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        // Mot de passe refusé par Firebase Auth
+        // (peut arriver si le mdp Firebase Auth n'a pas été mis à jour lors du changement de mdp applicatif)
+        // On charge quand même les settings Firestore en mode anonyme pour obtenir le bon mot de passe
+        try {
+          await fbLoadAllAnonymous();
+        } catch (_) { /* ignore, on utilisera le localStorage local */ }
+        const userCheck = DB.authenticate(login, pwd);
+        if (!userCheck) {
+          errEl.textContent = 'Identifiant ou mot de passe incorrect.';
+          errEl.style.display = 'block';
+          document.getElementById('pwd-input').value = '';
+          btn.textContent = 'Se connecter →'; btn.disabled = false;
+          return;
+        }
+        // Mdp correct côté app mais Firebase Auth est désynchronisé → on le met à jour
+        try { await fbSyncAuthPassword(login, pwd); } catch (_) {}
+        currentUser = userCheck; DB.saveSession(userCheck);
+        btn.textContent = 'Se connecter →'; btn.disabled = false;
+        showApp(); return;
+      }
+      // Autre erreur Firebase (réseau, config) : basculer en mode local silencieusement
+      console.warn('[Firebase] Connexion impossible, mode local activé :', err.message);
+    }
+  }
+
+  // Vérification locale (avec settings potentiellement mis à jour depuis Firestore)
+  const user = DB.authenticate(login, pwd);
   if (!user) {
     errEl.textContent = 'Identifiant ou mot de passe incorrect.';
     errEl.style.display = 'block';
     document.getElementById('pwd-input').value = '';
+    btn.textContent = 'Se connecter →'; btn.disabled = false;
     return;
-  }
-  errEl.style.display = 'none';
-  btn.textContent = 'Connexion…'; btn.disabled = true;
-  if (typeof FB_MODE !== 'undefined' && FB_MODE) {
-    try { await fbLogin(login, pwd); } catch (err) {
-      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        btn.textContent = 'Se connecter →'; btn.disabled = false;
-        errEl.textContent = 'Mot de passe incorrect.'; errEl.style.display = 'block'; return;
-      }
-      // Autre erreur Firebase (réseau, etc.) : continuer en mode local
-      console.warn('[Firebase] Connexion Firebase impossible, mode local activé :', err.message);
-    }
   }
   btn.textContent = 'Se connecter →'; btn.disabled = false;
   currentUser = user; DB.saveSession(user); showApp();
@@ -1518,6 +1545,21 @@ function renderSettings(el) {
     </div>
 
     <div class="settings-panel" id="tab-users">
+      ${typeof FB_MODE !== 'undefined' && FB_MODE ? `
+      <div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.84rem;color:#1B5E20;display:flex;gap:.6rem;align-items:flex-start">
+        <span style="font-size:1.1rem">🔒</span>
+        <div>
+          <strong>Paramètres synchronisés via Firebase</strong><br>
+          Les mots de passe et les périodes sont sauvegardés dans Firebase et automatiquement disponibles sur tous les postes connectés. Toute modification ici est immédiatement propagée.
+        </div>
+      </div>` : `
+      <div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.84rem;color:#E65100;display:flex;gap:.6rem;align-items:flex-start">
+        <span style="font-size:1.1rem">⚠️</span>
+        <div>
+          <strong>Mode local — données non partagées</strong><br>
+          Firebase n'est pas configuré. Les mots de passe et paramètres sont stockés uniquement sur ce poste. Pour partager les données entre plusieurs postes, configurez Firebase.
+        </div>
+      </div>`}
       <div class="panel">
         <div class="panel-header">
           <h3>👤 Gestion des utilisateurs</h3>
@@ -1897,7 +1939,12 @@ function saveUser(id) {
     if (!pwd) { showToast('Le mot de passe est obligatoire pour un nouvel utilisateur.', 'error'); return; }
     s.users.push({ id:'u'+Date.now(), prenom, nom, login, role, password:pwd });
   }
-  DB.saveSettings(s); closeModal(); showToast('Utilisateur enregistré.', 'success');
+  DB.saveSettings(s);
+  // Si Firebase est actif et qu'un mot de passe a changé, synchroniser Firebase Auth
+  if (pwd && typeof FB_MODE !== 'undefined' && FB_MODE && typeof fbSyncAuthPassword === 'function') {
+    fbSyncAuthPassword(login, pwd).catch(console.warn);
+  }
+  closeModal(); showToast('Utilisateur enregistré.' + (pwd && typeof FB_MODE !== 'undefined' && FB_MODE ? ' Synchronisation Firebase en cours…' : ''), 'success');
   renderSettings(document.getElementById('page-content'));
 }
 
