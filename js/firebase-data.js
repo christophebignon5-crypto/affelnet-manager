@@ -62,8 +62,17 @@ async function fbLoadAll() {
     ]);
 
     if (settSnap.exists) {
+      // Firestore a les paramètres → source de vérité, écraser le cache local
       FB_CACHE.settings = settSnap.data();
       localStorage.setItem(DB.KEYS.SETTINGS, JSON.stringify(FB_CACHE.settings));
+    } else {
+      // config/settings absent de Firestore → on pousse les paramètres locaux pour initialiser
+      // (évite que chaque nouvel appareil reste bloqué sur les valeurs par défaut)
+      const localSettings = FB_CACHE.settings;
+      if (localSettings && fbAuth && fbAuth.currentUser) {
+        console.info('[Firebase] config/settings absent — initialisation depuis le cache local…');
+        fbDb.collection('config').doc('settings').set(fbClean(localSettings)).catch(console.error);
+      }
     }
     if (formSnap.exists) {
       FB_CACHE.formations = formSnap.data().list;
@@ -222,6 +231,24 @@ async function fbRefreshNow() {
   }
 }
 
+// Force l'écriture des paramètres actuels dans Firestore (bouton "Forcer sync" dans Paramètres)
+async function fbForceSyncSettings() {
+  if (!FB_MODE) return;
+  if (!fbAuth || !fbAuth.currentUser) {
+    if (typeof showToast === 'function') showToast('Non connecté à Firebase — rechargez la page et reconnectez-vous.', 'error');
+    return;
+  }
+  try {
+    const s = FB_CACHE.settings || DB.getSettings();
+    await fbDb.collection('config').doc('settings').set(fbClean(s));
+    if (typeof showToast === 'function') showToast('✅ Paramètres forcés vers Firebase — tous les appareils vont se mettre à jour.', 'success');
+    console.info('[Firebase] Synchronisation forcée des paramètres réussie.');
+  } catch (err) {
+    console.error('[Firebase] Erreur sync forcée:', err);
+    if (typeof showToast === 'function') showToast('❌ Échec sync forcée : ' + err.code + '. Vérifiez les règles Firestore.', 'error');
+  }
+}
+
 // Affiche le bouton refresh et l'indicateur de sync (appelé après login Firebase réussi)
 function fbShowSyncUI() {
   const btn = document.getElementById('btn-refresh');
@@ -280,16 +307,29 @@ async function fbLogin(login, appPassword) {
 
     } else if (err1.code === 'auth/wrong-password' || err1.code === 'auth/invalid-credential') {
       // Le compte Firebase Auth existe avec l'ANCIEN mot de passe applicatif (avant migration).
-      // On tente de se connecter avec le mot de passe applicatif fourni pour migrer.
-      try {
-        await fbAuth.signInWithEmailAndPassword(email, appPassword);
-        // Succès avec l'ancien mot de passe → migrer vers le mot de passe interne fixe
-        await fbAuth.currentUser.updatePassword(internalPwd);
-        console.info('[Firebase] Compte migré vers authentification interne pour', login);
-      } catch (migrErr) {
-        // Migration impossible (ex : mot de passe applicatif a déjà changé sur un autre appareil)
-        // Tentative en auth anonyme pour quand même charger Firestore
-        console.warn('[Firebase] Migration Firebase Auth impossible, tentative anonyme :', migrErr.code);
+      // On essaie plusieurs candidats : le mot de passe saisi + tous les mots de passe par défaut connus.
+      // Couvre le cas fréquent où Firebase Auth a le mot de passe initial et que l'app a été changée depuis.
+      const migrationCandidates = [
+        appPassword,       // mot de passe saisi par l'utilisateur (peut être le nouveau)
+        'proviseur2025',   // mots de passe par défaut de l'application
+        'secr2025',
+        'aed2025',
+      ].filter((p, i, arr) => arr.indexOf(p) === i); // dédoublonnage
+
+      let migrated = false;
+      for (const candidate of migrationCandidates) {
+        try {
+          await fbAuth.signInWithEmailAndPassword(email, candidate);
+          await fbAuth.currentUser.updatePassword(internalPwd);
+          console.info('[Firebase] Compte migré vers authentification interne pour', login, '(via candidat)');
+          migrated = true;
+          break;
+        } catch (_) { /* essayer le candidat suivant */ }
+      }
+
+      if (!migrated) {
+        // Tous les candidats ont échoué → tentative auth anonyme en dernier recours
+        console.warn('[Firebase] Migration Firebase Auth impossible pour', login, '— tentative anonyme');
         try {
           await fbAuth.signInAnonymously();
         } catch (anonErr) {
@@ -329,7 +369,17 @@ if (FB_MODE) {
   DB.saveSettings = function(s) {
     FB_CACHE.settings = s;
     localStorage.setItem(this.KEYS.SETTINGS, JSON.stringify(s));
-    fbDb.collection('config').doc('settings').set(fbClean(s)).catch(console.error);
+    // Écriture Firestore uniquement si l'utilisateur est authentifié (évite d'écraser
+    // avec les valeurs par défaut lors de l'initialisation avant login)
+    if (fbAuth && fbAuth.currentUser) {
+      fbDb.collection('config').doc('settings').set(fbClean(s)).catch(err => {
+        console.error('[Firebase] Erreur sauvegarde paramètres:', err);
+        // Remonter l'erreur à l'utilisateur si showToast est disponible
+        if (typeof showToast === 'function') {
+          showToast('⚠️ Paramètres sauvegardés localement uniquement — erreur Firebase : ' + err.code, 'error');
+        }
+      });
+    }
   };
 
   // ── Formations ───────────────────────────────────────────────────

@@ -1545,10 +1545,14 @@ function renderSettings(el) {
       ${typeof FB_MODE !== 'undefined' && FB_MODE ? `
       <div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.84rem;color:#1B5E20;display:flex;gap:.6rem;align-items:flex-start">
         <span style="font-size:1.1rem">🔒</span>
-        <div>
+        <div style="flex:1">
           <strong>Paramètres synchronisés via Firebase</strong><br>
-          Les mots de passe et les périodes sont sauvegardés dans Firebase et automatiquement disponibles sur tous les postes connectés. Toute modification ici est immédiatement propagée.
+          Les mots de passe et les périodes sont sauvegardés dans Firebase et automatiquement disponibles sur tous les postes. Toute modification ici est immédiatement propagée.
         </div>
+        <button onclick="fbForceSyncSettings()" title="Forcer la synchronisation des paramètres vers Firebase"
+          style="background:#2D6A4F;color:#fff;border:none;border-radius:6px;padding:.35rem .7rem;cursor:pointer;font-size:.78rem;white-space:nowrap;flex-shrink:0">
+          🔄 Forcer sync
+        </button>
       </div>` : `
       <div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.84rem;color:#E65100;display:flex;gap:.6rem;align-items:flex-start">
         <span style="font-size:1.1rem">⚠️</span>
