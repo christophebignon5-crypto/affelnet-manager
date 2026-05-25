@@ -293,56 +293,61 @@ async function fbSyncAuthPassword(login, password) {
 async function fbLogin(login, appPassword) {
   if (!FB_MODE) return;
 
-  const email      = loginToEmail(login);
+  const email       = loginToEmail(login);
   const internalPwd = loginToFirebaseAuthPwd(login);
 
-  // ── Étape 1 : connexion Firebase Auth avec le mot de passe interne fixe ──
-  try {
-    await fbAuth.signInWithEmailAndPassword(email, internalPwd);
-    // Connexion réussie → compte déjà migré ou nouvellement créé
-  } catch (err1) {
-    if (err1.code === 'auth/user-not-found') {
-      // Premier login tous appareils confondus : créer le compte avec le mot de passe interne
+  // ── Tous les mots de passe candidats pour Firebase Auth ──────────────────
+  // Firebase Auth sert UNIQUEMENT à obtenir l'accès à Firestore.
+  // Le vrai mot de passe applicatif est vérifié ensuite depuis config/settings Firestore.
+  const candidates = [internalPwd, appPassword, 'proviseur2025', 'secr2025', 'aed2025']
+    .filter((p, i, arr) => p && arr.indexOf(p) === i);
+
+  // ── Étape 1 : essayer chaque candidat ────────────────────────────────────
+  let signedIn = false;
+  for (const pwd of candidates) {
+    try {
+      await fbAuth.signInWithEmailAndPassword(email, pwd);
+      signedIn = true;
+      // Si ce n'est pas le mot de passe interne, migrer en arrière-plan (sans bloquer)
+      if (pwd !== internalPwd) {
+        fbAuth.currentUser.updatePassword(internalPwd)
+          .then(() => console.info('[Firebase] Migré vers mdp interne pour', login))
+          .catch(e  => console.warn('[Firebase] Migration bg:', e.code));
+      }
+      break;
+    } catch (_) { /* candidat incorrect — continuer */ }
+  }
+
+  // ── Étape 2 : créer le compte si aucune connexion ne fonctionne ──────────
+  // Firebase SDK v10 renvoie auth/invalid-credential pour les comptes inexistants
+  // ET pour les mauvais mots de passe — on ne peut pas distinguer les deux cas.
+  // → On tente la création ; si le compte existe déjà, Firebase lèvera email-already-in-use.
+  if (!signedIn) {
+    try {
       await fbAuth.createUserWithEmailAndPassword(email, internalPwd);
-
-    } else if (err1.code === 'auth/wrong-password' || err1.code === 'auth/invalid-credential') {
-      // Le compte Firebase Auth existe avec l'ANCIEN mot de passe applicatif (avant migration).
-      // On essaie plusieurs candidats : le mot de passe saisi + tous les mots de passe par défaut connus.
-      // Couvre le cas fréquent où Firebase Auth a le mot de passe initial et que l'app a été changée depuis.
-      const migrationCandidates = [
-        appPassword,       // mot de passe saisi par l'utilisateur (peut être le nouveau)
-        'proviseur2025',   // mots de passe par défaut de l'application
-        'secr2025',
-        'aed2025',
-      ].filter((p, i, arr) => arr.indexOf(p) === i); // dédoublonnage
-
-      let migrated = false;
-      for (const candidate of migrationCandidates) {
-        try {
-          await fbAuth.signInWithEmailAndPassword(email, candidate);
-          await fbAuth.currentUser.updatePassword(internalPwd);
-          console.info('[Firebase] Compte migré vers authentification interne pour', login, '(via candidat)');
-          migrated = true;
-          break;
-        } catch (_) { /* essayer le candidat suivant */ }
+      signedIn = true;
+      console.info('[Firebase] Compte Firebase Auth créé pour', login);
+    } catch (createErr) {
+      // email-already-in-use = compte existant avec mdp inconnu → pas grave, on continue
+      if (createErr.code !== 'auth/email-already-in-use') {
+        console.warn('[Firebase] Création compte impossible:', createErr.code);
       }
-
-      if (!migrated) {
-        // Tous les candidats ont échoué → tentative auth anonyme en dernier recours
-        console.warn('[Firebase] Migration Firebase Auth impossible pour', login, '— tentative anonyme');
-        try {
-          await fbAuth.signInAnonymously();
-        } catch (anonErr) {
-          // Auth anonyme non activée — lever l'erreur originale pour que doLogin() la gère
-          throw err1;
-        }
-      }
-    } else {
-      throw err1;
     }
   }
 
-  // ── Étape 2 : charger les données depuis Firestore ──────────────────────
+  // ── Étape 3 : auth anonyme en dernier recours ────────────────────────────
+  if (!signedIn) {
+    try {
+      await fbAuth.signInAnonymously();
+      signedIn = true;
+      console.warn('[Firebase] Auth anonyme utilisée pour accéder à Firestore');
+    } catch (_) {
+      console.error('[Firebase] Toutes les méthodes d\'authentification ont échoué pour', login);
+      // On ne throw pas — fbLoadAll va échouer proprement et utiliser le localStorage
+    }
+  }
+
+  // ── Étape 4 : charger les données depuis Firestore ────────────────────────
   await fbLoadAll();
   fbListenStudents();
   fbShowSyncUI();

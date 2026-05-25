@@ -45,32 +45,14 @@ async function doLogin() {
 
   if (typeof FB_MODE !== 'undefined' && FB_MODE) {
     // ── Mode Firebase : charger Firestore EN PREMIER ────────────────────────
-    // Architecture découplée :
-    //   • Firebase Auth utilise un mot de passe INTERNE fixe (jamais exposé à l'utilisateur)
-    //   • Les mots de passe applicatifs vivent uniquement dans Firestore config/settings
-    //   • DB.saveSettings() les synchronise automatiquement sur tous les appareils
+    // fbLogin() gère tous les cas d'authentification en interne (candidates, création,
+    // auth anonyme) et ne lève plus d'exception pour les erreurs d'auth ordinaires.
+    // Après fbLogin(), DB.authenticate() vérifie le mdp contre les données Firestore.
     try {
       await fbLogin(login, pwd);
-      // fbLogin a chargé les settings depuis Firestore → DB.authenticate utilise les bons mots de passe
     } catch (err) {
-      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        // Firebase Auth inaccessible (compte pas encore migré ET migration impossible)
-        // Dernière chance : auth anonyme pour récupérer les settings Firestore
-        try { await fbLoadAllAnonymous(); } catch (_) { /* ignoré, on utilise localStorage */ }
-        const userCheck = DB.authenticate(login, pwd);
-        if (!userCheck) {
-          errEl.textContent = 'Identifiant ou mot de passe incorrect.';
-          errEl.style.display = 'block';
-          document.getElementById('pwd-input').value = '';
-          btn.textContent = 'Se connecter →'; btn.disabled = false;
-          return;
-        }
-        currentUser = userCheck; DB.saveSession(userCheck);
-        btn.textContent = 'Se connecter →'; btn.disabled = false;
-        showApp(); return;
-      }
-      // Autre erreur Firebase (réseau, config) : basculer en mode local silencieusement
-      console.warn('[Firebase] Connexion impossible, mode local activé :', err.message);
+      // Erreur catastrophique uniquement (réseau, config Firebase invalide)
+      console.warn('[Firebase] Erreur critique Firebase, mode local activé :', err.message);
     }
   }
 
