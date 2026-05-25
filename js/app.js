@@ -111,6 +111,9 @@ function renderSidebar() {
       <span class="nav-icon">📥</span> Import Fichiers élèves
     </div>` : ''}
     ${isPriv ? `
+    <div class="nav-item" data-view="listes" onclick="navigateTo('listes')">
+      <span class="nav-icon">🖨️</span> Listes par classe
+    </div>
     <div class="nav-item" data-view="formations" onclick="navigateTo('formations')">
       <span class="nav-icon">🏫</span> Classes & Formations
     </div>
@@ -152,6 +155,7 @@ function navigateTo(view, params = {}) {
     dashboard:'📊 Tableau de bord', students:'👥 Liste des élèves',
     student:'🎓 Fiche élève', derogations:'⚠️ Dérogations',
     import:'📥 Import Fichiers élèves', formations:'🏫 Classes & Formations',
+    listes:'🖨️ Listes par classe',
     activity:'📋 Journal d\'activité', settings:'⚙️ Paramètres', print:'🖨️ Fiche d\'inscription',
   };
   document.getElementById('page-title').textContent = titles[view] || view;
@@ -166,6 +170,11 @@ function navigateTo(view, params = {}) {
       if (currentUser.role !== 'proviseur') {
         content.innerHTML = `<div class="empty-state"><span class="empty-icon">🔒</span><p>Accès réservé au Proviseur</p></div>`;
       } else { renderImport(content); }
+      break;
+    case 'listes':
+      if (currentUser.role !== 'proviseur' && currentUser.role !== 'secretaire') {
+        content.innerHTML = `<div class="empty-state"><span class="empty-icon">🔒</span><p>Accès réservé au Proviseur et au Secrétariat</p></div>`;
+      } else { renderClassLists(content); }
       break;
     case 'formations':  renderFormations(content);             break;
     case 'activity':    renderActivity(content);               break;
@@ -648,6 +657,258 @@ function renderDerogations(el) {
       </div>
     </div>`;
   }).join('');
+}
+
+/* ═══════════════════════════════════════════════════
+   LISTES PAR CLASSE (impression)
+═══════════════════════════════════════════════════ */
+function renderClassLists(el) {
+  const students  = DB.getStudents();
+  const classes   = DB.getClasses();
+  const settings  = DB.getSettings();
+  const printDate = new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+
+  // Grouper les élèves par classe affectée, trier par nom
+  const byClasse = {};
+  students.forEach(s => {
+    const cl = s.classeAffectee || '__inconnu__';
+    if (!byClasse[cl]) byClasse[cl] = [];
+    byClasse[cl].push(s);
+  });
+  Object.values(byClasse).forEach(arr => arr.sort((a, b) => (a.nom||'').localeCompare(b.nom||'')));
+
+  // Trier les classes (filière puis code)
+  const sorted = Object.entries(byClasse)
+    .filter(([cl]) => cl !== '__inconnu__')
+    .sort(([a], [b]) => {
+      const fa = (classes[a] || {}).filiere || 'z';
+      const fb = (classes[b] || {}).filiere || 'z';
+      return fa.localeCompare(fb) || a.localeCompare(b);
+    });
+
+  // Élèves sans classe (si existants)
+  const sansClasse = byClasse['__inconnu__'] || [];
+
+  // Liste des classes pour le filtre
+  const classeOptions = sorted.map(([cl]) => `<option value="${esc(cl)}">${esc(cl)}</option>`).join('');
+
+  const periodeColors = { preTour:'#1565C0', premierTour:'#6A1B9A', secondTour:'#B71C1C' };
+  const periodeLabels = { preTour:'Pré-Tour', premierTour:'Tour 1', secondTour:'Tour 2', orientation:'Orien.' };
+
+  // Génère le bloc imprimable pour une classe
+  const classBlock = (code, eleves, first) => {
+    const cfg      = classes[code] || {};
+    const total    = eleves.length;
+    const inscrits = eleves.filter(s => s.statut === 'inscrit' || s.statut === 'hors_periode').length;
+    const attente  = eleves.filter(s => s.statut === 'derogation_attente').length;
+    const nonInsc  = total - inscrits - attente;
+    const pct      = total > 0 ? Math.round(inscrits / total * 100) : 0;
+    const capacite = cfg.capacite || 0;
+    const places   = capacite > 0 ? capacite - inscrits : '—';
+
+    const rows = eleves.map((s, i) => {
+      const isInscrit = s.statut === 'inscrit' || s.statut === 'hors_periode';
+      const isHors    = s.statut === 'hors_periode';
+      const isAttente = s.statut === 'derogation_attente';
+      const isRefuse  = s.statut === 'derogation_refuse';
+
+      const statutIcon = isInscrit
+        ? `<span style="color:#1B5E20;font-weight:700">✅ Inscrit${isHors ? ' *' : ''}</span>`
+        : isAttente ? `<span style="color:#E65100;font-weight:700">⏳ Déroga.</span>`
+        : isRefuse  ? `<span style="color:#B71C1C;font-weight:700">❌ Refusé</span>`
+        : `<span style="color:#555">☐ Non inscrit</span>`;
+
+      const periodeLabel = s.source === 'affelnet'
+        ? (periodeLabels[s.periodeSource] || 'AFFELNET')
+        : s.source === 'orientation' ? 'Orien.' : '—';
+      const periodeColor = s.source === 'affelnet'
+        ? (periodeColors[s.periodeSource] || '#455A64')
+        : '#2D6A4F';
+
+      const dateInsc = s.dateInscription
+        ? new Date(s.dateInscription).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' })
+        : '—';
+
+      const bg = isInscrit ? '#F1F8F3' : isAttente ? '#FFF8F0' : isRefuse ? '#FFF0F0' : '#fff';
+      return `
+        <tr style="background:${bg}">
+          <td style="text-align:center;color:#999;font-size:.75rem">${i + 1}</td>
+          <td style="font-weight:600">${esc(s.nom)}</td>
+          <td>${esc(s.prenom)}</td>
+          <td style="font-family:monospace;font-size:.75rem;color:#888">${esc(s.ine || '—')}</td>
+          <td style="text-align:center">
+            <span style="display:inline-block;background:${periodeColor};color:#fff;padding:.05rem .35rem;border-radius:50px;font-size:.68rem;font-weight:600">${periodeLabel}</span>
+          </td>
+          <td>${statutIcon}</td>
+          <td style="color:#777;font-size:.75rem">${dateInsc}</td>
+          <td style="font-size:.75rem;color:#888">${esc(s.etablissementOrigine || s.classeActuelle || '—')}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+    <div class="classe-print-block${first ? ' first-block' : ''}" data-classe="${esc(code)}">
+      <!-- En-tête de classe -->
+      <div class="liste-header">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem">
+          <div>
+            <div class="liste-school">${esc(settings.etablissement || '')} — ${esc(settings.ville || '')}</div>
+            <div class="liste-title">${esc(code)}${cfg.libelle ? ` — ${esc(cfg.libelle)}` : ''}</div>
+            <div class="liste-sub">${cfg.filiere ? `Filière : ${esc(cfg.filiere)}` : ''} ${cfg.capacite ? `· Capacité : ${cfg.capacite}` : ''}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="liste-annee">Année scolaire ${esc(settings.annee || '')}</div>
+            <div class="liste-date">Édité le ${printDate}</div>
+          </div>
+        </div>
+        <!-- Bande de stats -->
+        <div class="liste-stats-bar">
+          <div class="liste-stat"><span class="lst-n">${total}</span><span class="lst-l">Élèves</span></div>
+          <div class="liste-stat ok"><span class="lst-n">${inscrits}</span><span class="lst-l">Inscrits</span></div>
+          <div class="liste-stat warn"><span class="lst-n">${nonInsc}</span><span class="lst-l">Non inscrits</span></div>
+          ${attente > 0 ? `<div class="liste-stat att"><span class="lst-n">${attente}</span><span class="lst-l">Dérogations</span></div>` : ''}
+          ${capacite > 0 ? `<div class="liste-stat cap"><span class="lst-n">${places}</span><span class="lst-l">Places libres</span></div>` : ''}
+          <div class="liste-stat pct"><span class="lst-n">${pct}%</span><span class="lst-l">Taux inscription</span></div>
+        </div>
+      </div>
+
+      <!-- Tableau élèves -->
+      <table class="liste-table">
+        <thead>
+          <tr>
+            <th style="width:2rem">N°</th>
+            <th>Nom</th>
+            <th>Prénom</th>
+            <th>INE</th>
+            <th style="text-align:center;width:3.5rem">Période</th>
+            <th style="width:7rem">Statut</th>
+            <th style="width:4.5rem">Date inscr.</th>
+            <th>Établ. origine / Classe actuelle</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <!-- Pied de page -->
+      <div class="liste-footer">
+        <span>${inscrits} inscrit(s) sur ${total} élève(s)${capacite > 0 ? ` — Capacité : ${capacite}` : ''}${eleves.some(s => s.statut === 'hors_periode') ? ' · * Hors période' : ''}</span>
+        <span>Page <span class="page-num"></span></span>
+      </div>
+    </div>`;
+  };
+
+  // Rendu complet
+  if (sorted.length === 0 && sansClasse.length === 0) {
+    el.innerHTML = `<div class="empty-state"><span class="empty-icon">📂</span><p>Aucun élève importé. Importez d'abord un fichier AFFELNET ou Orientation.</p></div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <!-- Barre d'actions (hors impression) -->
+    <div class="no-print" style="display:flex;gap:.75rem;align-items:center;margin-bottom:1.2rem;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="window.print()" style="display:flex;align-items:center;gap:.4rem">
+        🖨️ Imprimer toutes les classes
+      </button>
+      <select id="print-classe-select" class="filter-select" onchange="filterListeImpression(this.value)" style="min-width:180px">
+        <option value="">Toutes les classes</option>
+        ${classeOptions}
+      </select>
+      <button class="btn btn-outline" onclick="filterListeImpression('')">Réinitialiser</button>
+      <span style="font-size:.82rem;color:#777;margin-left:.5rem">${sorted.length} classe(s) · ${students.length} élève(s)</span>
+    </div>
+
+    <!-- Styles dédiés impression -->
+    <style>
+      .classe-print-block { margin-bottom: 0; }
+      .first-block { page-break-before: auto !important; }
+      @media print {
+        #sidebar, #top-header, .no-print { display: none !important; }
+        #main-content { margin: 0 !important; padding: 0 !important; }
+        #page-content { padding: 0 !important; }
+        body { background: #fff !important; }
+        .classe-print-block {
+          page-break-before: always;
+          page-break-inside: avoid;
+          break-before: page;
+          break-inside: avoid;
+          padding: .4cm .6cm .3cm;
+          box-sizing: border-box;
+        }
+        .first-block { page-break-before: auto !important; break-before: auto !important; }
+        .classe-print-block.hidden-for-print { display: none !important; }
+      }
+      @media screen {
+        .classe-print-block {
+          background: #fff;
+          border: 1px solid #D0E8D8;
+          border-radius: 10px;
+          padding: 1.2rem 1.4rem 1rem;
+          margin-bottom: 1.5rem;
+          box-shadow: 0 2px 8px rgba(0,0,0,.06);
+        }
+      }
+      .liste-header { margin-bottom: .6rem; }
+      .liste-school { font-size: .78rem; color: #555; text-transform: uppercase; letter-spacing: .03em; }
+      .liste-title  { font-size: 1.15rem; font-weight: 800; color: #1B4332; margin: .15rem 0; }
+      .liste-sub    { font-size: .8rem; color: #666; }
+      .liste-annee  { font-size: .82rem; font-weight: 600; color: #2D6A4F; }
+      .liste-date   { font-size: .74rem; color: #999; }
+      .liste-stats-bar {
+        display: flex; gap: .8rem; flex-wrap: wrap;
+        background: #F0F7F2; border-radius: 6px;
+        padding: .4rem .8rem; margin: .5rem 0;
+      }
+      .liste-stat   { display: flex; flex-direction: column; align-items: center; min-width: 3.5rem; }
+      .lst-n        { font-size: 1rem; font-weight: 800; color: #1B4332; line-height: 1; }
+      .lst-l        { font-size: .65rem; color: #666; text-transform: uppercase; letter-spacing: .02em; }
+      .liste-stat.ok  .lst-n { color: #1B5E20; }
+      .liste-stat.warn .lst-n { color: #555; }
+      .liste-stat.att .lst-n { color: #E65100; }
+      .liste-stat.cap .lst-n { color: #1565C0; }
+      .liste-stat.pct .lst-n { color: #6A1B9A; }
+      .liste-table {
+        width: 100%; border-collapse: collapse;
+        font-size: .78rem; margin-bottom: .4rem;
+      }
+      .liste-table th {
+        background: #1B4332; color: #fff;
+        padding: .25rem .4rem; text-align: left;
+        font-size: .72rem; font-weight: 600;
+        border: none;
+      }
+      .liste-table td {
+        padding: .22rem .4rem;
+        border-bottom: 1px solid #E8F0EA;
+        vertical-align: middle;
+      }
+      .liste-table tbody tr:last-child td { border-bottom: none; }
+      .liste-footer {
+        display: flex; justify-content: space-between;
+        font-size: .7rem; color: #999;
+        border-top: 1px solid #D0E8D8;
+        padding-top: .3rem; margin-top: .3rem;
+      }
+    </style>
+
+    <!-- Blocs par classe -->
+    <div id="liste-blocks">
+      ${sorted.map(([cl, eleves], i) => classBlock(cl, eleves, i === 0)).join('')}
+    </div>
+  `;
+}
+
+// Filtre pour n'afficher / imprimer qu'une seule classe
+function filterListeImpression(code) {
+  document.querySelectorAll('.classe-print-block').forEach(block => {
+    if (!code || block.dataset.classe === code) {
+      block.classList.remove('hidden-for-print');
+      block.style.display = '';
+    } else {
+      block.classList.add('hidden-for-print');
+      block.style.display = 'none';
+    }
+  });
+  const sel = document.getElementById('print-classe-select');
+  if (sel && sel.value !== code) sel.value = code;
 }
 
 /* ═══════════════════════════════════════════════════
