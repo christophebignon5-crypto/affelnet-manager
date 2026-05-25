@@ -1777,7 +1777,15 @@ function processAffelnetFile(file, periode) {
           periodesSource,              // Toutes les périodes où l'élève apparaît
         };
         if (ex) {
-          DB.upsertStudent({ ...student, statut:ex.statut, dateInscription:ex.dateInscription, inscritPar:ex.inscritPar, periode:ex.periode, deroDate:ex.deroDate, deroDemandeePar:ex.deroDemandeePar, deroValidePar:ex.deroValidePar, deroRefusMotif:ex.deroRefusMotif });
+          // Ne conserver que les champs définis (undefined interdit par Firestore)
+          const keepDefined = (src, keys) => Object.fromEntries(
+            keys.filter(k => src[k] !== undefined && src[k] !== null).map(k => [k, src[k]])
+          );
+          DB.upsertStudent({
+            ...student,
+            ...keepDefined(ex, ['statut','dateInscription','inscritPar','periode',
+                                 'deroDate','deroDemandeePar','deroValidePar','deroRefusMotif']),
+          });
           updated++;
         } else { DB.upsertStudent(student); added++; }
       });

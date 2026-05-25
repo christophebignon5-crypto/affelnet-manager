@@ -17,6 +17,13 @@ if (!FB_MODE) {
   console.info('[Firebase] Config non remplie — mode LocalStorage activé.');
 }
 
+/* ── Nettoyage Firestore : supprime les valeurs undefined ────────── */
+// Firestore lève une exception sur toute valeur `undefined` dans un document.
+// On convertit undefined → null pour tous les champs avant écriture.
+function fbClean(obj) {
+  return JSON.parse(JSON.stringify(obj, (_, v) => (v === undefined ? null : v)));
+}
+
 /* ── Cache mémoire ────────────────────────────────────────────────── */
 const FB_CACHE = {
   settings:   null,
@@ -190,7 +197,7 @@ if (FB_MODE) {
   DB.saveSettings = function(s) {
     FB_CACHE.settings = s;
     localStorage.setItem(this.KEYS.SETTINGS, JSON.stringify(s));
-    fbDb.collection('config').doc('settings').set(s).catch(console.error);
+    fbDb.collection('config').doc('settings').set(fbClean(s)).catch(console.error);
   };
 
   // ── Formations ───────────────────────────────────────────────────
@@ -202,7 +209,7 @@ if (FB_MODE) {
   DB.saveFormations = function(f) {
     FB_CACHE.formations = f;
     localStorage.setItem(this.KEYS.FORMATIONS, JSON.stringify(f));
-    fbDb.collection('config').doc('formations').set({ list: f }).catch(console.error);
+    fbDb.collection('config').doc('formations').set(fbClean({ list: f })).catch(console.error);
   };
 
   // ── Classes ──────────────────────────────────────────────────────
@@ -214,7 +221,7 @@ if (FB_MODE) {
   DB.saveClasses = function(c) {
     FB_CACHE.classes = c;
     localStorage.setItem(this.KEYS.CLASSES, JSON.stringify(c));
-    fbDb.collection('config').doc('classes').set(c).catch(console.error);
+    fbDb.collection('config').doc('classes').set(fbClean(c)).catch(console.error);
   };
 
   // ── Élèves ───────────────────────────────────────────────────────
@@ -225,39 +232,35 @@ if (FB_MODE) {
   DB.saveStudents = function(arr) {
     FB_CACHE.students = arr;
     localStorage.setItem(this.KEYS.STUDENTS, JSON.stringify(arr));
-    // Écriture batch Firestore
+    // Écriture batch Firestore — fbClean élimine les undefined
     const batch = fbDb.batch();
     arr.forEach(s => {
       const ref = fbDb.collection('students').doc(s.ine);
-      batch.set(ref, s);
+      batch.set(ref, fbClean(s));
     });
     batch.commit().catch(console.error);
   };
 
   DB.upsertStudent = function(student) {
-    // Utiliser la source canonique (cache ou localStorage selon l'état)
-    const arr = this.getStudents().slice(); // copie pour éviter les mutations
+    const arr = this.getStudents().slice();
     const idx = arr.findIndex(s => s.ine === student.ine);
     if (idx >= 0) arr[idx] = { ...arr[idx], ...student };
     else arr.push(student);
-    // Toujours synchroniser le cache et le localStorage
     FB_CACHE.students = arr;
     localStorage.setItem(this.KEYS.STUDENTS, JSON.stringify(arr));
     const toWrite = idx >= 0 ? arr[idx] : student;
-    fbDb.collection('students').doc(student.ine).set(toWrite, { merge: true }).catch(console.error);
+    // fbClean : Firestore rejette undefined, on le convertit en null
+    fbDb.collection('students').doc(student.ine).set(fbClean(toWrite), { merge: true }).catch(console.error);
   };
 
   DB.updateStudentStatus = function(ine, patch) {
-    // Utiliser la source canonique (cache ou localStorage selon l'état)
     const arr = this.getStudents().slice();
     const idx = arr.findIndex(s => s.ine === ine);
     if (idx >= 0) {
       arr[idx] = { ...arr[idx], ...patch };
-      // Toujours synchroniser le cache et le localStorage
       FB_CACHE.students = arr;
       localStorage.setItem(this.KEYS.STUDENTS, JSON.stringify(arr));
-      // Écrire le document complet pour s'assurer que Firestore est à jour
-      fbDb.collection('students').doc(ine).set(arr[idx]).catch(console.error);
+      fbDb.collection('students').doc(ine).set(fbClean(arr[idx])).catch(console.error);
       return arr[idx];
     }
     return null;
@@ -273,7 +276,7 @@ if (FB_MODE) {
     FB_CACHE.activity.unshift(full);
     if (FB_CACHE.activity.length > 500) FB_CACHE.activity.pop();
     localStorage.setItem(this.KEYS.ACTIVITY, JSON.stringify(FB_CACHE.activity));
-    fbDb.collection('activity').doc(String(full.id)).set(full).catch(console.error);
+    fbDb.collection('activity').doc(String(full.id)).set(fbClean(full)).catch(console.error);
   };
 
   // ── Reset élèves ─────────────────────────────────────────────────
