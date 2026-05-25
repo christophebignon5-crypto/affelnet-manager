@@ -44,20 +44,19 @@ async function doLogin() {
   btn.textContent = 'Connexion…'; btn.disabled = true;
 
   if (typeof FB_MODE !== 'undefined' && FB_MODE) {
-    // ── Mode Firebase : charger Firestore EN PREMIER ────────────────
-    // Les paramètres (mots de passe, périodes) sont la source de vérité dans Firestore.
-    // On les récupère avant de vérifier le mot de passe pour s'affranchir du localStorage local.
+    // ── Mode Firebase : charger Firestore EN PREMIER ────────────────────────
+    // Architecture découplée :
+    //   • Firebase Auth utilise un mot de passe INTERNE fixe (jamais exposé à l'utilisateur)
+    //   • Les mots de passe applicatifs vivent uniquement dans Firestore config/settings
+    //   • DB.saveSettings() les synchronise automatiquement sur tous les appareils
     try {
       await fbLogin(login, pwd);
-      // fbLogin a chargé les settings depuis Firestore → DB.authenticate lit maintenant les bons mots de passe
+      // fbLogin a chargé les settings depuis Firestore → DB.authenticate utilise les bons mots de passe
     } catch (err) {
       if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        // Mot de passe refusé par Firebase Auth
-        // (peut arriver si le mdp Firebase Auth n'a pas été mis à jour lors du changement de mdp applicatif)
-        // On charge quand même les settings Firestore en mode anonyme pour obtenir le bon mot de passe
-        try {
-          await fbLoadAllAnonymous();
-        } catch (_) { /* ignore, on utilisera le localStorage local */ }
+        // Firebase Auth inaccessible (compte pas encore migré ET migration impossible)
+        // Dernière chance : auth anonyme pour récupérer les settings Firestore
+        try { await fbLoadAllAnonymous(); } catch (_) { /* ignoré, on utilise localStorage */ }
         const userCheck = DB.authenticate(login, pwd);
         if (!userCheck) {
           errEl.textContent = 'Identifiant ou mot de passe incorrect.';
@@ -66,8 +65,6 @@ async function doLogin() {
           btn.textContent = 'Se connecter →'; btn.disabled = false;
           return;
         }
-        // Mdp correct côté app mais Firebase Auth est désynchronisé → on le met à jour
-        try { await fbSyncAuthPassword(login, pwd); } catch (_) {}
         currentUser = userCheck; DB.saveSession(userCheck);
         btn.textContent = 'Se connecter →'; btn.disabled = false;
         showApp(); return;
@@ -1940,11 +1937,9 @@ function saveUser(id) {
     s.users.push({ id:'u'+Date.now(), prenom, nom, login, role, password:pwd });
   }
   DB.saveSettings(s);
-  // Si Firebase est actif et qu'un mot de passe a changé, synchroniser Firebase Auth
-  if (pwd && typeof FB_MODE !== 'undefined' && FB_MODE && typeof fbSyncAuthPassword === 'function') {
-    fbSyncAuthPassword(login, pwd).catch(console.warn);
-  }
-  closeModal(); showToast('Utilisateur enregistré.' + (pwd && typeof FB_MODE !== 'undefined' && FB_MODE ? ' Synchronisation Firebase en cours…' : ''), 'success');
+  // DB.saveSettings() synchronise automatiquement config/settings dans Firestore
+  // (tous les appareils reçoivent les nouveaux mots de passe en temps réel)
+  closeModal(); showToast('Utilisateur enregistré.' + (typeof FB_MODE !== 'undefined' && FB_MODE ? ' Synchronisé sur tous les appareils.' : ''), 'success');
   renderSettings(document.getElementById('page-content'));
 }
 

@@ -234,7 +234,15 @@ function loginToEmail(login) {
   return `${login.toLowerCase()}@affelnet-lpo.app`;
 }
 
-// Charge les settings Firestore via auth anonyme (fallback si Firebase Auth est désynchronisé)
+// Mot de passe Firebase Auth INTERNE — fixe, jamais modifié par l'utilisateur.
+// Indépendant du mot de passe applicatif (stocké dans Firestore config/settings).
+// Ce découplage permet de changer les mots de passe applicatifs sans jamais
+// toucher Firebase Auth, et garantit la synchronisation multi-appareils.
+function loginToFirebaseAuthPwd(login) {
+  return `${login.toLowerCase()}_affelnet_lpo_key_2025`;
+}
+
+// Charge les settings Firestore via auth anonyme (fallback d'urgence)
 async function fbLoadAllAnonymous() {
   if (!FB_MODE) return;
   if (!fbAuth.currentUser) {
@@ -247,46 +255,54 @@ async function fbLoadAllAnonymous() {
   }
 }
 
-// Resynchronise le mot de passe Firebase Auth avec le mot de passe applicatif
+// Ancienne fonction de synchronisation — désormais inutile car le mot de passe
+// Firebase Auth est interne et fixe. DB.saveSettings() suffit pour synchroniser
+// les mots de passe applicatifs via Firestore sur tous les appareils.
 async function fbSyncAuthPassword(login, password) {
-  if (!FB_MODE) return;
-  const email = loginToEmail(login);
-  try {
-    // Tenter de se connecter avec l'ancien compte anonyme puis de créer/réauthentifier
-    await fbAuth.signInWithEmailAndPassword(email, password);
-  } catch (err) {
-    if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-      // Créer ou recréer le compte Firebase Auth avec le bon mot de passe
-      try {
-        await fbAuth.createUserWithEmailAndPassword(email, password);
-        console.info('[Firebase] Compte Firebase Auth créé/réinitialisé pour', login);
-      } catch (createErr) {
-        // Si le compte existe mais avec un mauvais mdp, on ne peut pas le réinitialiser sans le précédent
-        // → l'administrateur devra le supprimer manuellement dans la console Firebase si nécessaire
-        console.warn('[Firebase] Impossible de synchroniser Firebase Auth :', createErr.message);
-      }
-    }
-  }
-  // Recharger toutes les données avec la bonne session
-  try { await fbLoadAll(); fbListenStudents(); fbShowSyncUI(); } catch (_) {}
+  // Plus nécessaire : le mot de passe Firebase Auth est fixe (loginToFirebaseAuthPwd).
+  // DB.saveSettings() met déjà à jour config/settings dans Firestore en temps réel.
 }
 
-async function fbLogin(login, password) {
-  if (!FB_MODE) return null;
+async function fbLogin(login, appPassword) {
+  if (!FB_MODE) return;
 
-  const email = loginToEmail(login);
+  const email      = loginToEmail(login);
+  const internalPwd = loginToFirebaseAuthPwd(login);
+
+  // ── Étape 1 : connexion Firebase Auth avec le mot de passe interne fixe ──
   try {
-    // Tentative de connexion
-    await fbAuth.signInWithEmailAndPassword(email, password);
-  } catch (err) {
-    if (err.code === 'auth/user-not-found') {
-      // Premier login : créer le compte Firebase
-      await fbAuth.createUserWithEmailAndPassword(email, password);
+    await fbAuth.signInWithEmailAndPassword(email, internalPwd);
+    // Connexion réussie → compte déjà migré ou nouvellement créé
+  } catch (err1) {
+    if (err1.code === 'auth/user-not-found') {
+      // Premier login tous appareils confondus : créer le compte avec le mot de passe interne
+      await fbAuth.createUserWithEmailAndPassword(email, internalPwd);
+
+    } else if (err1.code === 'auth/wrong-password' || err1.code === 'auth/invalid-credential') {
+      // Le compte Firebase Auth existe avec l'ANCIEN mot de passe applicatif (avant migration).
+      // On tente de se connecter avec le mot de passe applicatif fourni pour migrer.
+      try {
+        await fbAuth.signInWithEmailAndPassword(email, appPassword);
+        // Succès avec l'ancien mot de passe → migrer vers le mot de passe interne fixe
+        await fbAuth.currentUser.updatePassword(internalPwd);
+        console.info('[Firebase] Compte migré vers authentification interne pour', login);
+      } catch (migrErr) {
+        // Migration impossible (ex : mot de passe applicatif a déjà changé sur un autre appareil)
+        // Tentative en auth anonyme pour quand même charger Firestore
+        console.warn('[Firebase] Migration Firebase Auth impossible, tentative anonyme :', migrErr.code);
+        try {
+          await fbAuth.signInAnonymously();
+        } catch (anonErr) {
+          // Auth anonyme non activée — lever l'erreur originale pour que doLogin() la gère
+          throw err1;
+        }
+      }
     } else {
-      throw err;
+      throw err1;
     }
   }
-  // Charger les données depuis Firestore
+
+  // ── Étape 2 : charger les données depuis Firestore ──────────────────────
   await fbLoadAll();
   fbListenStudents();
   fbShowSyncUI();
