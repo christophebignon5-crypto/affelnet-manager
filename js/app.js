@@ -438,8 +438,14 @@ function renderStudents(el) {
           style="white-space:nowrap">
           🔄 Redoublants${studentFilter.redoublant ? ' ✕' : ''}
         </button>
+        <button class="btn btn-sm ${studentFilter.source==='saisie' ? 'btn-primary' : 'btn-outline'}"
+          onclick="studentFilter.source=studentFilter.source==='saisie'?'':'saisie';studentFilter.redoublant=false;renderStudentTable()"
+          style="white-space:nowrap">
+          ✏️ Saisie${studentFilter.source==='saisie' ? ' ✕' : ''}
+        </button>
         <div style="flex:1"></div>
         <span id="student-count" style="font-size:.82rem;color:#777"></span>
+        ${currentUser.role !== 'aed' ? `<button class="btn btn-primary btn-sm" onclick="openAddStudentModal()" style="white-space:nowrap;margin-left:.5rem">➕ Ajouter</button>` : ''}
       </div>
       <div style="overflow-x:auto">
         <table class="data-table">
@@ -465,6 +471,7 @@ function renderStudentTable() {
     const matchR = !studentFilter.redoublant || (s.redoublant && !s.classeAffectee);
     const matchSrc = !studentFilter.source || (() => {
       if (studentFilter.source === 'orientation') return s.source === 'orientation';
+      if (studentFilter.source === 'saisie')      return s.source === 'saisie';
       // Filtre par période AFFELNET
       const ps = s.periodesSource || (s.periodeSource ? [s.periodeSource] : []);
       return ps.includes(studentFilter.source);
@@ -493,6 +500,7 @@ function renderStudentTable() {
         ${esc(s.nom)}
         ${s.source === 'affelnet'    ? periodeBadgeInline(s.periodeSource) : ''}
         ${s.source === 'orientation' ? `<span style="display:inline-block;margin-left:.4rem;font-size:.7rem;background:#2D6A4F;color:#fff;padding:.1rem .4rem;border-radius:50px;vertical-align:middle">🎓 Orientation</span>` : ''}
+        ${s.source === 'saisie'      ? `<span style="display:inline-block;margin-left:.4rem;font-size:.7rem;background:#37474F;color:#fff;padding:.1rem .4rem;border-radius:50px;vertical-align:middle">✏️ Saisie</span>` : ''}
         ${s.redoublant ? `<span style="display:inline-block;margin-left:.4rem;font-size:.7rem;background:#E65100;color:#fff;padding:.1rem .4rem;border-radius:50px;vertical-align:middle">🔄 Redoublant</span>` : ''}
       </td>
       <td>${esc(s.prenom)}</td>
@@ -541,6 +549,7 @@ function renderStudentDetail(el, ine) {
           </div>
           <div style="margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
             ${s.source === 'orientation' ? `<span class="badge" style="background:#E8F5E9;color:#2D6A4F;border:1px solid #A8D5B5">🎓 Élève orientation</span>` : ''}
+            ${s.source === 'saisie'      ? `<span class="badge" style="background:#ECEFF1;color:#37474F;border:1px solid #B0BEC5">✏️ Saisie manuelle</span>` : ''}
             ${s.source === 'affelnet' ? periodeBadgeInline(s.periodeSource) : ''}
             ${statusBadge(s.statut)} ${periodeBadge(s.periode)}
           </div>
@@ -610,6 +619,18 @@ function renderStudentDetail(el, ine) {
         </div>` : ''}
         ${s.statut==='derogation_attente' ? `<div style="margin-top:1rem;background:#FFF8E1;border:1px solid #FFE082;border-radius:var(--radius);padding:1rem"><div style="font-weight:700;color:#E65100;margin-bottom:.3rem">⚠️ Dérogation en attente</div><div style="font-size:.88rem;color:#555">Demandée par : ${esc(s.deroDemandeePar||'—')} le ${s.deroDate?new Date(s.deroDate).toLocaleDateString('fr-FR'):'—'}</div></div>` : ''}
         ${s.statut==='derogation_refuse' ? `<div style="margin-top:1rem;background:#FFEBEE;border:1px solid #FFCDD2;border-radius:var(--radius);padding:1rem"><div style="font-weight:700;color:#B71C1C;margin-bottom:.3rem">❌ Dérogation refusée</div><div style="font-size:.88rem;color:#555">Motif : ${esc(s.deroRefusMotif||'—')}</div></div>` : ''}
+        <!-- ── Zone Mémo ─────────────────────────────────────── -->
+        <div style="margin-top:1rem">
+          <div class="panel-header" style="border-radius:8px 8px 0 0;margin-bottom:0"><h3>📝 Mémo</h3></div>
+          <div style="border:1px solid #E0EDE5;border-top:none;border-radius:0 0 8px 8px;padding:1rem">
+            <textarea id="memo-${s.ine}" rows="3"
+              style="width:100%;resize:vertical;border:1px solid #ccc;border-radius:6px;padding:.5rem;font-size:.88rem;font-family:inherit;box-sizing:border-box"
+              placeholder="Informations internes, observations, contact famille…">${esc(s.memo||'')}</textarea>
+            <div style="margin-top:.5rem;text-align:right">
+              <button class="btn btn-primary btn-sm" onclick="saveStudentMemo('${s.ine}')">💾 Enregistrer le mémo</button>
+            </div>
+          </div>
+        </div>
         <div class="action-bar no-print">
           ${canEnroll ? `<button class="btn btn-primary btn-lg" onclick="openEnrollModal('${s.ine}')">✅ Inscrire l'élève</button>` : ''}
           ${s.statut==='non_inscrit' && !DB.getPeriodeActive() && currentUser.role==='aed' && s.source!=='orientation' ? `<button class="btn btn-lg" style="background:#FFF3E0;color:#E65100" onclick="openDeroModal('${s.ine}')">⚠️ Demander dérogation</button>` : ''}
@@ -1783,6 +1804,7 @@ function openEditStudentModal(ine) {
         <div class="form-group"><label>LV2</label><input type="text" id="ed-lv2" value="${esc(s.lv2||'')}"></div>
         <div class="form-group" style="grid-column:1/-1"><label>Formation (libellé AFFELNET)</label><input type="text" id="ed-formation" value="${esc(s.libelleFormation||'')}"></div>
         <div class="form-group" style="grid-column:1/-1"><label>Établissement d'origine</label><input type="text" id="ed-etab" value="${esc(s.etablissementOrigine||'')}"></div>
+        <div class="form-group" style="grid-column:1/-1"><label>📝 Mémo <span style="font-weight:400;color:#888">(notes internes)</span></label><textarea id="ed-memo" rows="2" style="resize:vertical">${esc(s.memo||'')}</textarea></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1800,11 +1822,12 @@ function saveEditStudent(ine) {
   const lv2        = document.getElementById('ed-lv2').value.trim();
   const formation  = document.getElementById('ed-formation').value.trim();
   const etab       = document.getElementById('ed-etab').value.trim();
+  const memo       = document.getElementById('ed-memo').value.trim();
 
   if (!nom) { showToast('Le nom est obligatoire.', 'error'); return; }
   if (redoublant && !classe) { showToast('Veuillez sélectionner la classe de redoublement.', 'error'); return; }
 
-  DB.upsertStudent({ ine, nom, prenom, classeAffectee: classe, redoublant, lv1, lv2, libelleFormation: formation, etablissementOrigine: etab });
+  DB.upsertStudent({ ine, nom, prenom, classeAffectee: classe, redoublant, lv1, lv2, libelleFormation: formation, etablissementOrigine: etab, memo });
   const detail = redoublant && classe
     ? `Redoublant affecté en ${classe} — par ${currentUser.prenom} ${currentUser.nom}`
     : `Par ${currentUser.prenom} ${currentUser.nom}`;
@@ -1813,6 +1836,117 @@ function saveEditStudent(ine) {
   showToast(redoublant && classe ? `${nom} ${prenom} affecté(e) en ${classe}.` : 'Fiche élève mise à jour.', 'success');
   renderSidebar();
   navigateTo('student', { ine });
+}
+
+// ── Mémo élève ──────────────────────────────────────
+function saveStudentMemo(ine) {
+  const el = document.getElementById('memo-' + ine);
+  if (!el) return;
+  const memo = el.value.trim();
+  DB.upsertStudent({ ine, memo });
+  showToast('Mémo enregistré.', 'success');
+}
+
+// ── Modal : Ajouter un élève manuellement ───────────
+function openAddStudentModal() {
+  const classes  = DB.getClasses();
+  const allCodes = [...new Set([
+    ...Object.keys(classes),
+    ...DB.getStudents().map(x => x.classeAffectee).filter(Boolean),
+  ])].sort();
+
+  openModal(`
+    <div class="modal-header"><h3>➕ Ajouter un élève manuellement</h3><button class="btn-close-modal" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:8px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.84rem;color:#1B5E20">
+        <strong>Saisie manuelle</strong> — Si l'INE est inconnu, laissez <strong>#</strong> :
+        un identifiant provisoire sera généré automatiquement.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+        <div class="form-group">
+          <label>Nom *</label>
+          <input type="text" id="add-nom" placeholder="NOM" style="text-transform:uppercase"
+            oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label>Prénom *</label>
+          <input type="text" id="add-prenom" placeholder="Prénom">
+        </div>
+        <div class="form-group">
+          <label>INE <span style="font-weight:400;color:#888">(ou # si inconnu)</span></label>
+          <input type="text" id="add-ine" value="#" placeholder="#">
+        </div>
+        <div class="form-group">
+          <label>Classe affectée</label>
+          <select id="add-classe">
+            <option value="">— Sélectionner —</option>
+            ${allCodes.map(c => `<option value="${c}">${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Formation (libellé)</label>
+          <input type="text" id="add-formation" placeholder="Ex : BAC PRO ELEEC">
+        </div>
+        <div class="form-group">
+          <label>LV1</label>
+          <input type="text" id="add-lv1" placeholder="Ex : Anglais">
+        </div>
+        <div class="form-group">
+          <label>LV2</label>
+          <input type="text" id="add-lv2" placeholder="Ex : Espagnol">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Établissement d'origine</label>
+          <input type="text" id="add-etab" placeholder="Ex : Collège Victor Hugo">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>📝 Mémo <span style="font-weight:400;color:#888">(notes internes)</span></label>
+          <textarea id="add-memo" rows="2" style="resize:vertical"
+            placeholder="Informations complémentaires, contact famille…"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="saveAddStudent()">💾 Ajouter l'élève</button>
+    </div>`);
+}
+
+function saveAddStudent() {
+  const nom       = document.getElementById('add-nom').value.trim().toUpperCase();
+  const prenom    = document.getElementById('add-prenom').value.trim();
+  let   ine       = document.getElementById('add-ine').value.trim();
+  const classe    = document.getElementById('add-classe').value;
+  const formation = document.getElementById('add-formation').value.trim();
+  const lv1       = document.getElementById('add-lv1').value.trim();
+  const lv2       = document.getElementById('add-lv2').value.trim();
+  const etab      = document.getElementById('add-etab').value.trim();
+  const memo      = document.getElementById('add-memo').value.trim();
+
+  if (!nom || !prenom) { showToast('Nom et prénom sont obligatoires.', 'error'); return; }
+
+  // INE absent ou # → générer un identifiant provisoire
+  if (!ine || ine === '#') {
+    ine = `#${Date.now()}`;
+  } else if (!ine.startsWith('#') && DB.getStudent(ine)) {
+    showToast('Un élève avec cet INE existe déjà dans la liste.', 'error'); return;
+  }
+
+  DB.upsertStudent({
+    ine, nom, prenom,
+    libelleFormation: formation,
+    classeAffectee: classe,
+    lv1, lv2,
+    etablissementOrigine: etab,
+    memo,
+    statut: 'non_inscrit',
+    source: 'saisie',
+  });
+  DB.addActivity({ type: 'ajout', label: `Élève ajouté manuellement : ${nom} ${prenom}`, detail: `Par ${currentUser.prenom} ${currentUser.nom}` });
+  closeModal();
+  showToast(`${nom} ${prenom} ajouté(e) avec succès.`, 'success');
+  renderSidebar();
+  renderStudentTable();
 }
 
 // ── Modal : Dérogation ───────────────────────────────
@@ -2280,7 +2414,7 @@ function canEnrollStudent(s) {
   if (s.statut === 'derogation_attente') return false;
   if (s.statut === 'derogation_valide') return true;
   // Élèves orientation : inscription libre pour tous les rôles
-  if (s.source === 'orientation') return true;
+  if (s.source === 'orientation' || s.source === 'saisie') return true;
   // Proviseur et Secrétaire : toujours autorisés (peuvent inscrire hors période)
   if (currentUser.role === 'proviseur' || currentUser.role === 'secretaire') return true;
   // AED : la période active doit exister ET l'élève doit y être rattaché
