@@ -390,7 +390,7 @@ function filterByClasse(cl) {
    LISTE ÉLÈVES
 ═══════════════════════════════════════════════════ */
 function renderStudents(el) {
-  const allClasses = [...new Set(DB.getStudents().map(s => s.classeAffectee).filter(Boolean))].sort();
+  const allClasses = [...new Set(DB.getStudents().map(s => s.classeAffectee || 'Non défini'))].sort();
   el.innerHTML = `
     <div class="panel">
       <div class="table-toolbar">
@@ -466,7 +466,8 @@ function renderStudentTable() {
   const q   = studentFilter.search.toLowerCase();
   const filtered = all.filter(s => {
     const matchS = !q || (s.nom||'').toLowerCase().includes(q) || (s.prenom||'').toLowerCase().includes(q) || (s.ine||'').toLowerCase().includes(q);
-    const matchC = !studentFilter.classe || s.classeAffectee === studentFilter.classe;
+    const classeVal = s.classeAffectee || 'Non défini';
+    const matchC = !studentFilter.classe || classeVal === studentFilter.classe;
     const matchT = !studentFilter.statut || s.statut === studentFilter.statut;
     const matchR = !studentFilter.redoublant || (s.redoublant && !s.classeAffectee);
     const matchSrc = !studentFilter.source || (() => {
@@ -1343,6 +1344,41 @@ function renderImport(el) {
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ══ Onglet Sauvegarde ══════════════════════════ -->
+    <div class="settings-panel" id="tab-backup">
+      <div class="panel">
+        <div class="panel-header"><h3>💾 Sauvegarde des données</h3></div>
+        <div class="panel-body">
+          <div style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:8px;padding:1rem;margin-bottom:1.2rem;font-size:.88rem;color:#1565C0">
+            <strong>⚠️ En cas de problème</strong> — Cette sauvegarde contient <strong>toutes les données</strong> (élèves, inscriptions, paramètres). Exportez-la régulièrement et conservez-la en lieu sûr.
+          </div>
+
+          <div style="display:grid;gap:1rem">
+            <div style="border:1px solid #E0EDE5;border-radius:8px;padding:1.2rem">
+              <div style="font-weight:700;font-size:1rem;margin-bottom:.4rem;color:var(--green-900)">📤 Exporter une sauvegarde</div>
+              <p style="font-size:.85rem;color:#666;margin-bottom:1rem">Télécharge un fichier JSON avec toutes vos données. À conserver sur votre ordinateur ou une clé USB.</p>
+              <button class="btn btn-primary w-full" onclick="exportData()" style="font-size:1rem;padding:.8rem">
+                💾 Télécharger la sauvegarde complète
+              </button>
+            </div>
+
+            <div style="border:1px solid #FFCDD2;border-radius:8px;padding:1.2rem;background:#FFFAFA">
+              <div style="font-weight:700;font-size:1rem;margin-bottom:.4rem;color:#B71C1C">📥 Restaurer depuis une sauvegarde</div>
+              <p style="font-size:.85rem;color:#666;margin-bottom:1rem">Charge un fichier de sauvegarde précédemment exporté. <strong style="color:#B71C1C">Les données actuelles seront remplacées.</strong></p>
+              <button class="btn w-full" style="background:#FFEBEE;color:#B71C1C;border:1px solid #FFCDD2;font-size:1rem;padding:.8rem" onclick="confirmImportData()">
+                📂 Charger une sauvegarde...
+              </button>
+              <input type="file" id="import-json" accept=".json" style="display:none" onchange="importData(event)">
+            </div>
+          </div>
+
+          <div style="margin-top:1.2rem;font-size:.78rem;color:#999;text-align:center">
+            Dernière exportation : <span id="last-export-date">${localStorage.getItem('affelnet_last_export') || 'jamais'}</span>
+          </div>
+        </div>
+      </div>
     </div>`;
 }
 
@@ -1499,6 +1535,7 @@ function renderSettings(el) {
       <button class="settings-tab active" onclick="switchSettingsTab('tab-etablissement',this)">🏫 Établissement</button>
       <button class="settings-tab" onclick="switchSettingsTab('tab-periodes',this)">📅 Périodes</button>
       <button class="settings-tab" onclick="switchSettingsTab('tab-users',this)">👤 Utilisateurs</button>
+      <button class="settings-tab" onclick="switchSettingsTab('tab-backup',this)" style="color:#1565C0;font-weight:700">💾 Sauvegarde</button>
     </div>
 
     <div class="settings-panel active" id="tab-etablissement">
@@ -2367,17 +2404,42 @@ function exportData() {
   const a    = document.createElement('a');
   a.href = url; a.download = `affelnet-backup-${new Date().toISOString().split('T')[0]}.json`;
   a.click(); URL.revokeObjectURL(url);
-  showToast('Export réussi.', 'success');
+  const dateStr = new Date().toLocaleString('fr-FR');
+  localStorage.setItem('affelnet_last_export', dateStr);
+  const el = document.getElementById('last-export-date');
+  if (el) el.textContent = dateStr;
+  showToast('Sauvegarde téléchargée avec succès.', 'success');
+}
+
+function confirmImportData() {
+  openModal(`
+    <div style="text-align:center;padding:1rem">
+      <div style="font-size:2.5rem;margin-bottom:.5rem">⚠️</div>
+      <h3 style="color:#B71C1C;margin-bottom:.5rem">Restaurer une sauvegarde</h3>
+      <p style="color:#666;margin-bottom:1.5rem;font-size:.9rem">
+        Les données actuelles (élèves, inscriptions) seront <strong>remplacées</strong> par celles du fichier de sauvegarde.<br><br>
+        Cette action est irréversible.
+      </p>
+      <div style="display:flex;gap:.8rem;justify-content:center">
+        <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+        <button class="btn" style="background:#B71C1C;color:#fff" onclick="closeModal();document.getElementById('import-json').click()">
+          📂 Choisir le fichier de sauvegarde
+        </button>
+      </div>
+    </div>
+  `);
 }
 
 function importData(e) {
   const file = e.target.files[0]; if (!file) return;
+  e.target.value = '';
   const reader = new FileReader();
   reader.onload = ev => {
     try {
       const data = JSON.parse(ev.target.result);
-      if (!confirm(`Restaurer les données du ${data.exportedAt?new Date(data.exportedAt).toLocaleString('fr-FR'):'fichier sélectionné'} ? Les données actuelles seront remplacées.`)) return;
-      DB.importAll(data); showToast('Données restaurées avec succès.', 'success');
+      const dateExp = data.exportedAt ? new Date(data.exportedAt).toLocaleString('fr-FR') : 'inconnue';
+      DB.importAll(data);
+      showToast(`Données restaurées (sauvegarde du ${dateExp}).`, 'success');
       navigateTo('dashboard');
     } catch(err) { showToast('Erreur lors de la restauration : ' + err.message, 'error'); }
   };
