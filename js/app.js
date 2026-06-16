@@ -1344,41 +1344,6 @@ function renderImport(el) {
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- ══ Onglet Sauvegarde ══════════════════════════ -->
-    <div class="settings-panel" id="tab-backup">
-      <div class="panel">
-        <div class="panel-header"><h3>💾 Sauvegarde des données</h3></div>
-        <div class="panel-body">
-          <div style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:8px;padding:1rem;margin-bottom:1.2rem;font-size:.88rem;color:#1565C0">
-            <strong>⚠️ En cas de problème</strong> — Cette sauvegarde contient <strong>toutes les données</strong> (élèves, inscriptions, paramètres). Exportez-la régulièrement et conservez-la en lieu sûr.
-          </div>
-
-          <div style="display:grid;gap:1rem">
-            <div style="border:1px solid #E0EDE5;border-radius:8px;padding:1.2rem">
-              <div style="font-weight:700;font-size:1rem;margin-bottom:.4rem;color:var(--green-900)">📤 Exporter une sauvegarde</div>
-              <p style="font-size:.85rem;color:#666;margin-bottom:1rem">Télécharge un fichier JSON avec toutes vos données. À conserver sur votre ordinateur ou une clé USB.</p>
-              <button class="btn btn-primary w-full" onclick="exportData()" style="font-size:1rem;padding:.8rem">
-                💾 Télécharger la sauvegarde complète
-              </button>
-            </div>
-
-            <div style="border:1px solid #FFCDD2;border-radius:8px;padding:1.2rem;background:#FFFAFA">
-              <div style="font-weight:700;font-size:1rem;margin-bottom:.4rem;color:#B71C1C">📥 Restaurer depuis une sauvegarde</div>
-              <p style="font-size:.85rem;color:#666;margin-bottom:1rem">Charge un fichier de sauvegarde précédemment exporté. <strong style="color:#B71C1C">Les données actuelles seront remplacées.</strong></p>
-              <button class="btn w-full" style="background:#FFEBEE;color:#B71C1C;border:1px solid #FFCDD2;font-size:1rem;padding:.8rem" onclick="confirmImportData()">
-                📂 Charger une sauvegarde...
-              </button>
-              <input type="file" id="import-json" accept=".json" style="display:none" onchange="importData(event)">
-            </div>
-          </div>
-
-          <div style="margin-top:1.2rem;font-size:.78rem;color:#999;text-align:center">
-            Dernière exportation : <span id="last-export-date">${localStorage.getItem('affelnet_last_export') || 'jamais'}</span>
-          </div>
-        </div>
-      </div>
     </div>`;
 }
 
@@ -1623,6 +1588,38 @@ function renderSettings(el) {
                 </tr>`).join('')}
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ Onglet Sauvegarde ══════════════════════════ -->
+    <div class="settings-panel" id="tab-backup">
+      <div class="panel">
+        <div class="panel-header"><h3>💾 Sauvegarde des données</h3></div>
+        <div class="panel-body">
+          <div style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:8px;padding:1rem;margin-bottom:1.2rem;font-size:.88rem;color:#1565C0">
+            <strong>⚠️ En cas de problème</strong> — Cette sauvegarde contient <strong>toutes les données</strong> (élèves, inscriptions, paramètres). Exportez-la régulièrement et conservez-la en lieu sûr.
+          </div>
+          <div style="display:grid;gap:1rem">
+            <div style="border:1px solid #E0EDE5;border-radius:8px;padding:1.2rem">
+              <div style="font-weight:700;font-size:1rem;margin-bottom:.4rem;color:var(--green-900)">📤 Exporter une sauvegarde</div>
+              <p style="font-size:.85rem;color:#666;margin-bottom:1rem">Télécharge un fichier JSON avec toutes vos données. À conserver sur votre ordinateur ou une clé USB.</p>
+              <button class="btn btn-primary w-full" onclick="exportData()" style="font-size:1rem;padding:.8rem">
+                💾 Télécharger la sauvegarde complète
+              </button>
+            </div>
+            <div style="border:1px solid #FFCDD2;border-radius:8px;padding:1.2rem;background:#FFFAFA">
+              <div style="font-weight:700;font-size:1rem;margin-bottom:.4rem;color:#B71C1C">📥 Restaurer depuis une sauvegarde</div>
+              <p style="font-size:.85rem;color:#666;margin-bottom:1rem">Charge un fichier de sauvegarde précédemment exporté. <strong style="color:#B71C1C">Les données actuelles seront remplacées.</strong></p>
+              <button class="btn w-full" style="background:#FFEBEE;color:#B71C1C;border:1px solid #FFCDD2;font-size:1rem;padding:.8rem" onclick="confirmImportData()">
+                📂 Charger une sauvegarde...
+              </button>
+              <input type="file" id="import-json" accept=".json" style="display:none" onchange="importData(event)">
+            </div>
+          </div>
+          <div style="margin-top:1.2rem;font-size:.78rem;color:#999;text-align:center">
+            Dernière exportation : <span id="last-export-date">${localStorage.getItem('affelnet_last_export') || 'jamais'}</span>
+          </div>
         </div>
       </div>
     </div>`;
